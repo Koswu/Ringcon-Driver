@@ -141,20 +141,6 @@ public:
 		}
 	}
 
-	//struct brcm_cmd_01 {
-	//	uint8_t subcmd;
-	//	union {
-
-	//		struct {
-	//			uint32_t offset;
-	//			uint8_t size;
-	//		} spi_read;
-
-	//		struct {
-	//			uint32_t address;
-	//		} hax_read;
-	//	};
-	//};
 
 	struct brcm_cmd_01 {
 		uint8_t subcmd;
@@ -163,31 +149,6 @@ public:
 	};
 
 	int timing_byte = 0x0;
-
-	//struct brcm_hdr {
-	//	uint8_t cmd;
-	//	uint8_t timer;
-	//	uint8_t rumble_l[4];
-	//	uint8_t rumble_r[4];
-	//};
-
-	//struct brcm_cmd_01 {
-	//	uint8_t subcmd;
-	//	union {
-	//		struct {
-	//			uint32_t offset;
-	//			uint8_t size;
-	//		} spi_read;
-
-	//		struct {
-	//			uint8_t arg1;
-	//			uint8_t arg2;
-	//		} subcmd_arg;
-	//	};
-	//};
-
-	//// Used to order the packets received in Joy-Con internally. Range 0x0-0xF.
-	//uint8_t timing_byte = 0x0;
 
 
 
@@ -247,13 +208,11 @@ public:
 
 		this->serial = _wcsdup(dev->serial_number);
 
-		//printf("Found joycon %c %i: %ls %s\n", L_OR_R(this->left_right), joycons.size(), this->serial, dev->path);
 		printf("Found joycon %c: %ls %s\n", L_OR_R(this->left_right), this->serial, dev->path);
 		this->handle = hid_open_path(dev->path);
 
 
 		if (this->handle == nullptr) {
-			//printf("Could not open serial %ls: %s\n", this->serial, strerror(errno));
 			throw;
 		}
 	}
@@ -276,11 +235,6 @@ public:
 
 		res = hid_read(handle, buf, 0x40);
 
-		//if (res < 1) {
-		//	printf("Number of bytes read was < 1!\n");
-		//} else {
-		//	printf("%d bytes read.\n", res);
-		//}
 	}
 
 
@@ -348,9 +302,6 @@ public:
 		//[0 1 x40 x40 0 1 x40 x40] is neutral.
 
 
-		//for (int j = 0; j <= 8; j++) {
-		//	buf[1 + intensity] = 0x1;//(i + j) & 0xFF;
-		//}
 
 		buf[1 + 0 + intensity] = 0x1;
 		buf[1 + 4 + intensity] = 0x1;
@@ -372,14 +323,6 @@ public:
 	void rumble2(uint16_t hf, uint8_t hfa, uint8_t lf, uint16_t lfa) {
 		unsigned char buf[0x400];
 		memset(buf, 0, 0x40);
-
-
-		//int hf		= HF;
-		//int hf_amp	= HFA;
-		//int lf		= LF;
-		//int lf_amp	= LFA;
-		// maybe:
-		//int hf_band = hf + hf_amp;
 
 		int off = 0;// offset
 		if (this->left_right == 2) {
@@ -413,7 +356,6 @@ public:
 		}
 		uint8_t encoded_hex_freq = (uint8_t)round(log2((double)frequency / 10.0) * 32.0);
 
-		//uint16_t encoded_hex_freq = (uint16_t)floor(-32 * (0.693147f - log(frequency / 5)) / 0.693147f + 0.5f); // old
 
 		//Convert to Joy-Con HF range. Range in big-endian: 0x0004-0x01FC with +0x0004 steps.
 		uint16_t hf = (encoded_hex_freq - 0x60) * 4;
@@ -427,22 +369,6 @@ public:
 
 		real_LF = clamp(real_LF, 40.875885f, 626.286133f);
 		real_HF = clamp(real_HF, 81.75177, 1252.572266f);
-
-		////Float frequency to hex conversion
-		//if (frequency < 0.0f) {
-		//	frequency = 0.0f;
-		//} else if (frequency > 1252.0f) {
-		//	frequency = 1252.0f;
-		//}
-		//uint8_t encoded_hex_freq = (uint8_t)round(log2((double)frequency / 10.0)*32.0);
-
-		//uint16_t encoded_hex_freq = (uint16_t)floor(-32 * (0.693147f - log(frequency / 5)) / 0.693147f + 0.5f); // old
-
-		////Convert to Joy-Con HF range. Range in big-endian: 0x0004-0x01FC with +0x0004 steps.
-		//uint16_t hf = (encoded_hex_freq - 0x60) * 4;
-		////Convert to Joy-Con LF range. Range: 0x01-0x7F.
-		//uint8_t lf = encoded_hex_freq - 0x40;
-
 
 
 		uint16_t hf = ((uint8_t)round(log2((double)real_HF * 0.01) * 32.0) - 0x60) * 4;
@@ -869,22 +795,12 @@ public:
 			timing_byte++;
 			buf[10] = 0x59;
 
-			/*for (int i = 0; i <= 48; i++) {
-				printf("%i: %02x ", i, buf[i]);
-			}
-			printf("\n");
-			printf("\n");*/
-
 			res = hid_write(handle, buf, output_buffer_length);
 			int retries = 0;
 
 			while (1) {
 				res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-				/*for (int i = 0; i <= 100; i++) {
-					printf("%i: %02x ", i, buf[i]);
-				}
-				printf("\n");
-				printf("\n");*/
+
 				if (buf[0] == 0x21) {
 					if (buf[14] == 0x59 && buf[16] == 0x20) { // Mcu mode is ringcon ready (Note:0x20 is the Ringcon ext device id - it may also be the fm_main_ver) No ringcon is buf[15]=fe. With ringcon buf[15]=0
 						goto step7;
@@ -987,11 +903,6 @@ public:
 			//21/10/20  92 6 3 37 6 0 0 0 0 28 22 205 166 43 0 0 0 197 20 147 187 160 13 0 0 4 0 0 0 0 0 0 0 144 168 193 166 43 0
 			//08/10/20  92 6 3 37 6 0 0 0 0 28 22 237 52  54 0 0 0 10 100  11 230 169 34 0 0 4 0 0 0 0 0 0 0 144 168 225 52  54 0
  
-  			/*for (int i = 0; i <= 48; i++) {
-				printf("%i: %02x ", i, buf[i]);
-			}
-			printf("\n");
-			printf("\n");*/
 
 			res = hid_write(handle, buf, output_buffer_length);
 			int retries = 0;
@@ -1037,12 +948,6 @@ public:
 			buf[13] = 0x01;
 			buf[14] = 0x02;
 
-			/*for (int i = 0; i <= 48; i++) {
-				printf("%i: %02x ", i, buf[i]);
-			}
-			printf("\n");
-			printf("\n");*/
-
 			res = hid_write(handle, buf, output_buffer_length);
 			int retries = 0;
 
@@ -1065,382 +970,10 @@ public:
 		}
 
 	step13:
-
-		//Set ext config
-		/*printf("Set Ext Config 58 - 4 5 1 2...\n");
-		set_ext_config(0x04, 0x05, 0x01, 0x02);
-		printf("Set Ext Config 58 - 4 0 0 2...\n");
-		set_ext_config(0x04, 0x00, 0x00, 0x02);
-		printf("Set Ext Config 58 - 4 4 5 2...\n");
-		set_ext_config(0x04, 0x04, 0x05, 0x02);
-		printf("Set Ext Config 58 - 4 0 0 2...\n");
-		set_ext_config(0x04, 0x00, 0x00, 0x02);
-		printf("Set Ext Config 58 - 4 4 1 2...\n");
-		set_ext_config(0x04, 0x04, 0x01, 0x02);
-		printf("Set Ext Config 58 - 4 4 2 2...\n");
-		set_ext_config(0x04, 0x04, 0x02, 0x02);
-		printf("Set Ext Config 58 - 4 4 4 2...\n");
-		set_ext_config(0x04, 0x04, 0x04, 0x02);
-		printf("Set Ext Config 58 - 4 4 3 2...\n");
-		set_ext_config(0x04, 0x04, 0x03, 0x02);
-		printf("Set Ext Config 58 - 4 4 32 2...\n");
-		set_ext_config(0x04, 0x04, 0x32, 0x02);
-		printf("Set Ext Config 58 - 4 0 1 2...\n");
-		set_ext_config(0x04, 0x00, 0x01, 0x02);
-		printf("Set Ext Config 58 - 4 0 0 2...\n");
-		set_ext_config(0x04, 0x00, 0x00, 0x02);
-		printf("Set Ext Config 58 - 4 4 1 2...\n");
-		set_ext_config(0x04, 0x04, 0x01, 0x02);
-		printf("Set Ext Config 58 - 4 4 2 2...\n");
-		set_ext_config(0x04, 0x04, 0x02, 0x02);
-		printf("Set Ext Config 58 - 4 4 4 2...\n");
-		set_ext_config(0x04, 0x04, 0x04, 0x02);
-		printf("Set Ext Config 58 - 4 4 3 2...\n");
-		set_ext_config(0x04, 0x04, 0x03, 0x02);
-		printf("Set Ext Config 58 - 4 0 0 2...\n");
-		set_ext_config(0x04, 0x00, 0x00, 0x02);
-		printf("Set Ext Config 58 - 4 4 11 2...\n");
-		set_ext_config(0x04, 0x04, 0x11, 0x02);*/
 		printf("Set Ext Config 58 - 4 4 12 2...\n");
 		set_ext_config(0x04, 0x04, 0x12, 0x02);
-		/*printf("Set Ext Config 58 - 4 4 13 2...\n");
-		set_ext_config(0x04, 0x04, 0x13, 0x02);*/
 
 		goto step20;
-
-	/*step14:
-		//Set MCU Mode
-		while (1) {
-			printf("Disable ext polling 5b...\n");
-
-			static int output_buffer_length = 49;
-			int res = 0;
-
-			memset(buf, 0, sizeof(buf));
-			auto hdr = (brcm_hdr*)buf;
-			hdr->cmd = 0x01;
-			hdr->rumble[0] = timing_byte & 0xF;
-			timing_byte++;
-			buf[10] = 0x5b;
-
-			for (int i = 0; i <= 48; i++) {
-				printf("%i: %02x ", i, buf[i]);
-			}
-			printf("\n");
-			printf("\n");
-
-			res = hid_write(handle, buf, output_buffer_length);
-			int retries = 0;
-			Sleep(300);
-
-			/*
-			for (int i = 0; i < 50; i++) {
-				res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-				for (int i = 0; i <= 100; i++) {
-					printf("%i: %02x ", i, buf[i]);
-				}
-				printf("\n");
-				printf("\n");
-			}/
-
-			while (1) {
-				res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-				Sleep(300);
-				for (int i = 0; i <= 60; i++) {
-					printf("%i: %02x ", i, buf[i]);
-				}
-				printf("\n");
-				printf("\n");
-				if (buf[0] == 0x21) {
-					if (buf[14] == 0x5b) { // Mcu mode is ringcon ready
-						goto step15;
-					}
-				}
-				retries++;
-				if (retries > 8 || res == 0) {
-					break;
-				}
-			}
-		}
-
-	step15:
-		// Enable IMU data
-		printf("Enabling IMU data 2...\n");
-		buf[0] = 0x02;
-		send_subcommand(0x01, 0x40, buf, 1);
-
-		while (1) {
-			res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-			for (int i = 0; i <= 63; i++) {
-				printf("%i: %02x ", i, buf[i]);
-			}
-			printf("\n");
-			printf("\n");
-			if (buf[0] == 0x21) {
-				if (buf[14] == 0x40) {
-					break;
-				}
-			}
-		}
-
-		timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-		IntToByteArray(timestamp);
-
-		while (1) {
-			printf("Get ext dev in format config 5C...\n");
-
-			static int output_buffer_length = 49; //CTCAER 
-			int res = 0;
-
-			memset(buf, 0, sizeof(buf));
-			auto hdr = (brcm_hdr*)buf;
-			hdr->cmd = 0x01;
-			hdr->rumble[0] = timing_byte & 0xF;
-			timing_byte++;
-			buf[10] = 0x5C;
-			buf[13] = 0xB0;
-			buf[14] = 0xA6;
-			buf[15] = 0x2B;
-			buf[19] = 0x1C;
-			buf[20] = 0x16;
-			buf[21] = 0xCD;
-			buf[22] = 0xA6;
-			buf[23] = 0x2B;
-			buf[27] = timestampbuffer[0];// 0x74;//27-34 is the timestamp
-			buf[28] = timestampbuffer[1];//0x70;//
-			buf[29] = timestampbuffer[2];//0xA0;//
-			buf[30] = timestampbuffer[3];//0xBA;//
-			buf[31] = timestampbuffer[4];//0x91;//
-			buf[32] = timestampbuffer[5];//0x0A;//
-			buf[33] = timestampbuffer[6];//0x00;//
-			buf[34] = timestampbuffer[7];//0x00;//
-			buf[35] = 0x60;
-			buf[36] = 0x31;
-			buf[37] = 0xD4;
-			buf[38] = 0xA6;
-			buf[39] = 0x2B;
-			buf[44] = 0xF2;
-			buf[45] = 0x05;
-			buf[46] = 0x2A;
-			buf[47] = 0x01;
-
-			//21/10/20 - 92 0 0 176 166 43 0 0 0 28 22 205 166 43 0 0 0 55 35 55 184 160 13 0 0 96 49 212 166 43 0 0 0 0 242 5 42 1 0
-
-			for (int i = 0; i <= 48; i++) {
-				printf("%i: %02x ", i, buf[i]);
-			}
-			printf("\n");
-			printf("\n");
-
-			res = hid_write(handle, buf, output_buffer_length);
-			int retries = 0;
-
-			while (1) {
-				res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-				for (int i = 0; i <= 60; i++) {
-					printf("%i: %02x ", i, buf[i]);
-				}
-				printf("\n");
-				printf("\n");
-				if (buf[0] == 0x21) {
-					if (buf[14] == 0x5C) // External config set
-						goto step16;
-				}
-				retries++;
-				if (retries > 8 || res == 0)
-					break;
-			}
-		}
-		
-	step16:
-		while (1) {
-			printf("Disabling MCU data 21 21 1 0...\n"); // This changes the coninfo back to 8A when 15.09 17.01. It also has a report after ththe 8a change  of 15.09 17.00
-
-			static int output_buffer_length = 49; //CTCAER - USE THIS - for some reason the pkt sub command was positioned right but all the subcommand 21 21 stuff was offset plus one byte
-			int res = 0;
-
-			memset(buf, 0, sizeof(buf));
-			auto hdr = (brcm_hdr*)buf;
-			hdr->cmd = 0x01;
-			hdr->rumble[0] = timing_byte & 0xF;
-			timing_byte++;
-			buf[10] = 0x21;
-			buf[11] = 0x21;
-			buf[12] = 0x01;
-			buf[13] = 0x00;
-
-			buf[48] = mcu_crc8_calc(buf + 12, 36);
-
-			for (int i = 0; i <= 48; i++) {
-				printf("%i: %02x ", i, buf[i]);
-			}
-			printf("\n");
-			printf("\n");
-
-			res = hid_write(handle, buf, output_buffer_length);
-			int retries = 0;
-			Sleep(100);
-
-			while (1) {
-				res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-				for (int i = 0; i <= 100; i++) {
-					printf("%i: %02x ", i, buf[i]);
-				}
-				printf("\n");
-				printf("\n");
-				if (buf[0] == 0x21) {
-					if (buf[15] == 0x09 && buf[17] == 0x01) {
-						goto step17;
-					}
-				}
-				retries++;
-				if (retries > 8 || res == 0)
-					break;
-			}
-		}
-
-
-	step17:
-		// Disable MCU
-		while (1) {
-			printf("Disabling MCU data 22 0...\n");
-			buf[0] = 0x00; // Enabled - 00 = suspend, 01 = resume
-			send_subcommand(0x01, 0x22, buf, 1);
-			int retries = 0;
-			while (1) {
-				int res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-				for (int i = 0; i <= 63; i++) {
-					printf("%i: %02x ", i, buf[i]);
-				}
-				printf("\n");
-				printf("\n");
-				if (buf[14] == 0x22) {
-					//goto step1701;
-					goto step1;
-				}
-
-				retries++;
-				if (retries > 8 || res == 0)
-					//break;
-					goto step1;
-			}
-		}
-
-	step1701:
-		// Enable MCU data
-		while (1) {
-			printf("Enabling MCU data 22 1...\n");
-			buf[0] = 0x01; // Enabled - 00 = suspend, 01 = resume
-			send_subcommand(0x01, 0x22, buf, 1);
-			int retries = 0;
-			while (1) {
-				int res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-				for (int i = 0; i <= 63; i++) {
-					printf("%i: %02x ", i, buf[i]);
-				}
-				printf("\n");
-				printf("\n");
-				if (*(u16*)&buf[0xD] == 0x2280)
-					goto step18;
-
-				retries++;
-				if (retries > 8 || res == 0)
-					break;
-			}
-		}
-
-	step18:
-
-		while (1) {
-			printf("Enabling MCU data 21 21 0 3...\n");
-			static int output_buffer_length = 49; //CTCAER - USE THIS - for some reason the pkt sub command was positioned right but all the subcommand 21 21 stuff was offset plus one byte
-			int res = 0;
-
-			memset(buf, 0, sizeof(buf));
-			auto hdr = (brcm_hdr*)buf;
-			//auto pkt = (brcm_cmd_01*)(hdr+1);
-			hdr->cmd = 0x01;
-			hdr->rumble[0] = timing_byte & 0xF;
-			timing_byte++;
-			buf[10] = 0x21;
-			buf[11] = 0x21;
-			buf[12] = 0x00;
-			buf[13] = 0x03;
-			//pkt->subcmd_21_21.mcu_cmd = 0x21; // Set MCU mode cmd
-			//pkt->subcmd_21_21.mcu_subcmd = 0x00; // Set MCU mode cmd
-			//pkt->subcmd_21_21.mcu_mode = 0x03; // MCU mode - 1: Standby, 4: NFC, 5: IR, 6: Initializing/FW Update?
-
-			buf[48] = mcu_crc8_calc(buf + 12, 36);
-			for (int i = 0; i <= 48; i++) {
-				printf("%i: %02x ", i, buf[i]);
-			}
-			printf("\n");
-
-			res = hid_write(handle, buf, output_buffer_length);
-			int retries = 0;
-
-			while (1) {
-				res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-				for (int i = 0; i <= 48; i++) {
-					printf("%i: %02x ", i, buf[i]);
-				}
-				printf("\n");
-				if (buf[0] == 0x21) {
-					// *(u16*)buf[18]LE x04 in lower than 3.89fw, x05 in 3.89
-					// *(u16*)buf[20]LE x12 in lower than 3.89fw, x18 in 3.89
-					if (buf[15] == 0x01 && buf[22] == 0x03) // Mcu mode is standby
-						goto step19;
-				}
-				break;
-			}
-		}
-
-	step19:
-		while (1) {
-			printf("Enabling MCU data 21 21 1 1...\n");
-
-			static int output_buffer_length = 49; //CTCAER
-			int res = 0;
-
-			memset(buf, 0, sizeof(buf));
-			auto hdr = (brcm_hdr*)buf;
-			hdr->cmd = 0x01;
-			hdr->rumble[0] = timing_byte & 0xF;
-			timing_byte++;
-			buf[10] = 0x21;
-			buf[11] = 0x21;
-			buf[12] = 0x01;
-			buf[13] = 0x01;
-
-			buf[48] = mcu_crc8_calc(buf + 12, 36);
-
-			for (int i = 0; i <= 48; i++) {
-				printf("%i: %02x ", i, buf[i]);
-			}
-			printf("\n");
-			printf("\n");
-
-			res = hid_write(handle, buf, output_buffer_length);
-			int retries = 0;
-			Sleep(50);
-
-			while (1) {
-				res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-				Sleep(100);
-				for (int i = 0; i <= 60; i++) {
-					printf("%i: %02x ", i, buf[i]);
-				}
-				printf("\n");
-				printf("\n");
-				if (buf[2] == 0x8b || buf[2] == 0x6b || buf[2] == 0x4b || buf[2] == 0x2b) {//(buf[15] == 0x01 && buf[16] == 0x32) { // No idea, is 16 an error code with 0x32?
-					goto step20;
-				}
-				retries++;
-				if (retries > 8 || res == 0) {
-
-				}
-			}
-		}*/
 
 step20:
 
@@ -1717,71 +1250,6 @@ step20:
 
 	}
 
-
-
-	//int write_spi_data(uint32_t offset, const uint16_t write_len, uint8_t* test_buf) {
-	//	int res;
-	//	uint8_t buf[0x100];
-	//	int error_writing = 0;
-	//	while (1) {
-	//		memset(buf, 0, sizeof(buf));
-	//		auto hdr = (brcm_hdr *)buf;
-	//		auto pkt = (brcm_cmd_01 *)(hdr + 1);
-	//		hdr->cmd = 1;
-	//		hdr->timer = timing_byte & 0xF;
-	//		timing_byte++;
-	//		pkt->subcmd = 0x11;
-	//		pkt->spi_read.offset = offset;
-	//		pkt->spi_read.size = write_len;
-	//		for (int i = 0; i < write_len; i++) {
-	//			buf[0x10 + i] = test_buf[i];
-	//		}
-
-	//		res = hid_write(handle, buf, sizeof(*hdr) + sizeof(*pkt) + write_len);
-
-	//		res = hid_read(handle, buf, sizeof(buf));
-	//		if (*(uint16_t*)&buf[0xD] == 0x1180) {
-	//			break;
-	//		}
-	//		error_writing++;
-	//		if (error_writing == 125) {
-	//			return 1;
-	//		}
-	//	}
-
-	//	return 0;
-	//}
-
-
-
-	//int get_spi_data(uint32_t offset, const uint16_t read_len, uint8_t* test_buf) {
-	//	int res;
-	//	uint8_t buf[0x100];
-	//	while (1) {
-	//		memset(buf, 0, sizeof(buf));
-	//		auto hdr = (brcm_hdr *)buf;
-	//		auto pkt = (brcm_cmd_01 *)(hdr + 1);
-	//		hdr->cmd = 1;
-	//		hdr->timer = timing_byte & 0xF;
-	//		timing_byte++;
-	//		pkt->subcmd = 0x10;
-	//		pkt->spi_read.offset = offset;
-	//		pkt->spi_read.size = read_len;
-	//		res = hid_write(handle, buf, sizeof(*hdr) + sizeof(*pkt));
-
-	//		res = hid_read(handle, buf, sizeof(buf));
-	//		if ((*(u16*)&buf[0xD] == 0x1090) && (*(uint32_t*)&buf[0xF] == offset)) {
-	//			break;
-	//		}
-	//	}
-	//	if (res >= 0x14 + read_len) {
-	//		for (int i = 0; i < read_len; i++) {
-	//			test_buf[i] = buf[0x14 + i];
-	//		}
-	//	}
-
-	//	return 0;
-	//}
 	void GetCalibrationData() {
 		printf("Getting calibration data...\n");
 		memset(factory_stick_cal, 0, 0x12);
@@ -1840,12 +1308,8 @@ step20:
 			stick_cal_y_l[0] = stick_cal_y_l[1] - ((user_stick_cal[10] << 4) | (user_stick_cal[9] >> 4));
 			stick_cal_x_l[2] = stick_cal_x_l[1] + ((user_stick_cal[3] << 8) & 0xF00 | user_stick_cal[2]);
 			stick_cal_y_l[2] = stick_cal_y_l[1] + ((user_stick_cal[4] << 4) | (user_stick_cal[3] >> 4));
-			//FormJoy::myform1->textBox_lstick_ucal->Text = String::Format(L"L Stick User:\r\nCenter X,Y: ({0:X3}, {1:X3})\r\nX: [{2:X3} - {4:X3}] Y: [{3:X3} - {5:X3}]",
-				//stick_cal_x_l[1], stick_cal_y_l[1], stick_cal_x_l[0], stick_cal_y_l[0], stick_cal_x_l[2], stick_cal_y_l[2]);
 		}
 		else {
-			//FormJoy::myform1->textBox_lstick_ucal->Text = L"L Stick User:\r\nNo calibration";
-			//printf("no user Calibration data for left stick.\n");
 		}
 
 		if ((user_stick_cal[0xB] | user_stick_cal[0xC] << 8) == 0xA1B2) {
@@ -1855,8 +1319,6 @@ step20:
 			stick_cal_y_r[0] = stick_cal_y_r[1] - ((user_stick_cal[18] << 4) | (user_stick_cal[17] >> 4));
 			stick_cal_x_r[2] = stick_cal_x_r[1] + ((user_stick_cal[20] << 8) & 0xF00 | user_stick_cal[19]);
 			stick_cal_y_r[2] = stick_cal_y_r[1] + ((user_stick_cal[21] << 4) | (user_stick_cal[20] >> 4));
-			//FormJoy::myform1->textBox_rstick_ucal->Text = String::Format(L"R Stick User:\r\nCenter X,Y: ({0:X3}, {1:X3})\r\nX: [{2:X3} - {4:X3}] Y: [{3:X3} - {5:X3}]",
-				//stick_cal_x_r[1], stick_cal_y_r[1], stick_cal_x_r[0], stick_cal_y_r[0], stick_cal_x_r[2], stick_cal_y_r[2]);
 		}
 		else {
 			//FormJoy::myform1->textBox_rstick_ucal->Text = L"R Stick User:\r\nNo calibration";
@@ -1879,24 +1341,12 @@ step20:
 
 		// user calibration:
 		if ((user_sensor_cal[0x0] | user_sensor_cal[0x1] << 8) == 0xA1B2) {
-			//FormJoy::myform1->textBox_6axis_ucal->Text = L"6-Axis User (XYZ):\r\nAcc:  ";
-			//for (int i = 0; i < 0xC; i = i + 6) {
-			//	FormJoy::myform1->textBox_6axis_ucal->Text += String::Format(L"{0:X4} {1:X4} {2:X4}\r\n      ",
-			//		user_sensor_cal[i + 2] | user_sensor_cal[i + 3] << 8,
-			//		user_sensor_cal[i + 4] | user_sensor_cal[i + 5] << 8,
-			//		user_sensor_cal[i + 6] | user_sensor_cal[i + 7] << 8);
-			//}
+	
 			// Acc cal origin position
 			sensor_cal[0][0] = uint16_to_int16(user_sensor_cal[2] | user_sensor_cal[3] << 8);
 			sensor_cal[0][1] = uint16_to_int16(user_sensor_cal[4] | user_sensor_cal[5] << 8);
 			sensor_cal[0][2] = uint16_to_int16(user_sensor_cal[6] | user_sensor_cal[7] << 8);
-			//FormJoy::myform1->textBox_6axis_ucal->Text += L"\r\nGyro: ";
-			//for (int i = 0xC; i < 0x18; i = i + 6) {
-			//	FormJoy::myform1->textBox_6axis_ucal->Text += String::Format(L"{0:X4} {1:X4} {2:X4}\r\n      ",
-			//		user_sensor_cal[i + 2] | user_sensor_cal[i + 3] << 8,
-			//		user_sensor_cal[i + 4] | user_sensor_cal[i + 5] << 8,
-			//		user_sensor_cal[i + 6] | user_sensor_cal[i + 7] << 8);
-			//}
+
 			// Gyro cal origin position
 			sensor_cal[1][0] = uint16_to_int16(user_sensor_cal[0xE] | user_sensor_cal[0xF] << 8);
 			sensor_cal[1][1] = uint16_to_int16(user_sensor_cal[0x10] | user_sensor_cal[0x11] << 8);
