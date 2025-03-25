@@ -1,0 +1,17 @@
+{
+    "files.associations": {
+        "charconv": "cpp",
+        "chrono": "cpp",
+        "exception": "cpp",
+        "format": "cpp",
+        "memory": "cpp",
+        "thread": "cpp",
+        "type_traits": "cpp",
+        "utility": "cpp",
+        "vector": "cpp",
+        "xlocnum": "cpp",
+        "xtr1common": "cpp",
+        "xtree": "cpp",
+        "xutility": "cpp"
+    }
+}
