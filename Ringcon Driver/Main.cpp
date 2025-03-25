@@ -14,7 +14,7 @@
 #include <hidapi.h>
 
 #include "packet.h"
-#include "joycon.hpp"
+#include "joycon/joycon.hpp"
 #include "MouseController.hpp"
 #include "tools.hpp"
 

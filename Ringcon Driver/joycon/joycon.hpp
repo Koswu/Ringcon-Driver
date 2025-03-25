@@ -1,7 +1,9 @@
+#pragma once
 #include <bitset>
 #include <chrono>
 #include <hidapi.h>
 #include "tools.hpp"
+#include "joycon/utils.hpp"
 
 #define JOYCON_VENDOR 0x057e
 #define JOYCON_L_BT 0x2006
@@ -9,24 +11,6 @@
 #define PRO_CONTROLLER 0x2009
 #define JOYCON_CHARGING_GRIP 0x200e
 #define L_OR_R(lr) (lr == 1 ? 'L' : (lr == 2 ? 'R' : '?'))
-
-u8 mcu_crc8_calc(u8* buf, u8 size) { //CTCAER
-	u8 crc8 = 0x0;
-
-	for (int i = 0; i < size; ++i) {
-		crc8 = mcu_crc8_table[(u8)(crc8 ^ buf[i])];
-	}
-	return crc8;
-}
-
-u8 ringmcu_crc8_calc(u8* buf, u8 size) {
-	u8 crc8 = 0x0;
-
-	for (int i = 0; i < size; ++i) {
-		crc8 = ringmcu_crc8_table[(u8)(crc8 ^ buf[i])];
-	}
-	return crc8;
-}
 
 
 
