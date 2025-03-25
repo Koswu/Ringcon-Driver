@@ -13,12 +13,63 @@
 #define L_OR_R(lr) (lr == 1 ? 'L' : (lr == 2 ? 'R' : '?'))
 
 class Joycon {
-public:
+private:
 	hid_device* handle;
 	wchar_t* serial;
-
 	std::string name;
+	int ringcon = 0x0A; //Ringcon data. Packet[40]. Fully pulled = 0x00, rest = 0x0a, fully pushed = 0x14.
+	int global_count = 0;
+	struct Stick {
+		uint16_t x = 0;
+		uint16_t y = 0;
+		float CalX = 0;
+		float CalY = 0;
+	};
+	// calibration data:
+	struct brcm_hdr {
+		uint8_t cmd;
+		uint8_t rumble[9];
+	};
 
+	unsigned char timestampbuffer[64] = { 0 };
+
+	// Convert long long to byte array
+	void IntToByteArray(long long value);
+
+	struct brcm_cmd_01 {
+		uint8_t subcmd;
+		uint32_t offset;
+		uint8_t size;
+	};
+
+	int timing_byte = 0x0;
+	float cal_x[1] = { 0.0f };
+	float cal_y[1] = { 0.0f };
+
+	bool has_user_cal_stick_l = false;
+	bool has_user_cal_stick_r = false;
+	bool has_user_cal_sensor = false;
+
+	unsigned char factory_stick_cal[0x12];
+	unsigned char user_stick_cal[0x16];
+	unsigned char sensor_model[0x6];
+	unsigned char stick_model[0x24];
+	unsigned char factory_sensor_cal[0x18];
+	unsigned char user_sensor_cal[0x1A];
+	uint16_t factory_sensor_cal_calm[0xC];
+	uint16_t user_sensor_cal_calm[0xC];
+
+	uint16_t stick_cal_x_l[0x3];
+	uint16_t stick_cal_y_l[0x3];
+	uint16_t stick_cal_x_r[0x3];
+	uint16_t stick_cal_y_r[0x3];
+
+
+	void hid_exchange(hid_device* handle, unsigned char* buf, int len);
+	void set_ext_config(int a, int b, int c, int d);
+	void set_vib_config(int a, int b, int c, int d);
+
+public:
 	int deviceNumber = 0;// left(0) or right(1)
 	int VigemNumber = 0;// vigem device number / device group number
 
@@ -30,7 +81,6 @@ public:
 	uint16_t buttons = 0;
 	uint16_t buttons2 = 0;// for pro controller
 
-	int ringcon = 0x0A; //Ringcon data. Packet[40]. Fully pulled = 0x00, rest = 0x0a, fully pushed = 0x14.
 
 	struct btn_states {
 		// left:
@@ -66,15 +116,6 @@ public:
 	int8_t dstick;
 	uint8_t battery;
 
-	int global_count = 0;
-
-	struct Stick {
-		uint16_t x = 0;
-		uint16_t y = 0;
-		float CalX = 0;
-		float CalY = 0;
-	};
-
 	Stick stick;
 	Stick stick2;// Pro Controller
 
@@ -103,50 +144,13 @@ public:
 		float z = 0;
 	} accel;
 
-	// calibration data:
-	struct brcm_hdr {
-		uint8_t cmd;
-		uint8_t rumble[9];
-	};
-
-	unsigned char timestampbuffer[64] = { 0 };
-	// Convert long long to byte array
-	void IntToByteArray(long long value);
-
-	struct brcm_cmd_01 {
-		uint8_t subcmd;
-		uint32_t offset;
-		uint8_t size;
-	};
-
-	int timing_byte = 0x0;
 
 	float acc_cal_coeff[3];
 	float gyro_cal_coeff[3];
-	float cal_x[1] = { 0.0f };
-	float cal_y[1] = { 0.0f };
 
-	bool has_user_cal_stick_l = false;
-	bool has_user_cal_stick_r = false;
-	bool has_user_cal_sensor = false;
-
-	unsigned char factory_stick_cal[0x12];
-	unsigned char user_stick_cal[0x16];
-	unsigned char sensor_model[0x6];
-	unsigned char stick_model[0x24];
-	unsigned char factory_sensor_cal[0x18];
-	unsigned char user_sensor_cal[0x1A];
-	uint16_t factory_sensor_cal_calm[0xC];
-	uint16_t user_sensor_cal_calm[0xC];
 	int16_t sensor_cal[0x2][0x3];
-	uint16_t stick_cal_x_l[0x3];
-	uint16_t stick_cal_y_l[0x3];
-	uint16_t stick_cal_x_r[0x3];
-	uint16_t stick_cal_y_r[0x3];
-
 public:
 	Joycon(struct hid_device_info* dev);
-	void hid_exchange(hid_device* handle, unsigned char* buf, int len);
 	void send_command(int command, uint8_t* data, int len);
 	void send_subcommand(int command, int subcommand, uint8_t* data, int len);
 	void rumble(int frequency, int intensity);
@@ -155,8 +159,6 @@ public:
 	void rumble4(float real_LF, float real_HF, uint8_t hfa, uint16_t lfa);
 	void rumble_freq(uint16_t hf, uint8_t hfa, uint8_t lf, uint16_t lfa);
 	void setGyroOffsets();
-	void set_ext_config(int a, int b, int c, int d);
-	void set_vib_config(int a, int b, int c, int d);
 	int init_bt();
 };
 

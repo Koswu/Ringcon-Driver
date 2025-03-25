@@ -12,6 +12,15 @@
         "xlocnum": "cpp",
         "xtr1common": "cpp",
         "xtree": "cpp",
-        "xutility": "cpp"
+        "xutility": "cpp",
+        "xstring": "cpp",
+        "*.rh": "cpp",
+        "compare": "cpp",
+        "locale": "cpp",
+        "system_error": "cpp",
+        "xlocale": "cpp",
+        "xlocinfo": "cpp",
+        "xloctime": "cpp",
+        "xmemory": "cpp"
     }
 }
