@@ -1,0 +1,1003 @@
+#include "joycon/joycon.hpp"
+
+void Joycon::rumble4(float real_LF, float real_HF, uint8_t hfa, uint16_t lfa) {
+
+	real_LF = clamp(real_LF, 40.875885f, 626.286133f);
+	real_HF = clamp(real_HF, 81.75177, 1252.572266f);
+
+
+	uint16_t hf = ((uint8_t)round(log2((double)real_HF * 0.01) * 32.0) - 0x60) * 4;
+	uint8_t lf = (uint8_t)round(log2((double)real_LF * 0.01) * 32.0) - 0x40;
+
+	rumble2(hf, hfa, lf, lfa);
+}
+
+void Joycon::rumble_freq(uint16_t hf, uint8_t hfa, uint8_t lf, uint16_t lfa) {
+	unsigned char buf[0x400];
+	memset(buf, 0, 0x40);
+
+
+	//int hf		= HF;
+	//int hf_amp	= HFA;
+	//int lf		= LF;
+	//int lf_amp	= LFA;
+	// maybe:
+	//int hf_band = hf + hf_amp;
+
+	int off = 0;// offset
+	if (this->left_right == 2) {
+		off = 4;
+	}
+
+
+	// Byte swapping
+	buf[0 + off] = hf & 0xFF;
+	buf[1 + off] = hfa + ((hf >> 8) & 0xFF); //Add amp + 1st byte of frequency to amplitude byte
+
+											 // Byte swapping
+	buf[2 + off] = lf + ((lfa >> 8) & 0xFF); //Add freq + 1st byte of LF amplitude to the frequency byte
+	buf[3 + off] = lfa & 0xFF;
+
+
+	// set non-blocking:
+	hid_set_nonblocking(this->handle, 1);
+
+	send_command(0x10, (uint8_t*)buf, 0x9);
+}
+
+void Joycon::setGyroOffsets() {
+	float thresh = 0.1;
+	if (abs(this->gyro.roll) > thresh || abs(this->gyro.pitch) > thresh || abs(this->gyro.yaw) > thresh) {
+		return;
+	}
+
+	//average = current + ((newData - current) / n);
+	this->gyro.offset.n += 1;
+	this->gyro.offset.roll = this->gyro.offset.roll + ((this->gyro.roll - this->gyro.offset.roll) / this->gyro.offset.n);
+	this->gyro.offset.pitch = this->gyro.offset.pitch + ((this->gyro.pitch - this->gyro.offset.pitch) / this->gyro.offset.n);
+	this->gyro.offset.yaw = this->gyro.offset.yaw + ((this->gyro.yaw - this->gyro.offset.yaw) / this->gyro.offset.n);
+	//this->gyro.offset.roll	= this->gyro.roll;
+	//this->gyro.offset.pitch = this->gyro.pitch;
+	//this->gyro.offset.yaw	= this->gyro.yaw;
+};
+
+
+
+void Joycon::set_ext_config(int a, int b, int c, int d) {
+	unsigned char buf[0x400];
+	memset(buf, 0, 0x40);
+
+	while (1) {
+		printf("Set Ext Config 58\n");
+
+		static int output_buffer_length = 49; //CTCAER - USE THIS - for some reason the pkt sub command was positioned right but all the subcommand 21 21 stuff was offset plus one byte
+		int res = 0;
+
+		memset(buf, 0, sizeof(buf));
+		auto hdr = (brcm_hdr*)buf;
+		hdr->cmd = 0x01;
+		hdr->rumble[0] = timing_byte & 0xF;
+		timing_byte++;
+		buf[10] = 0x58;
+		buf[11] = a;
+		buf[12] = b;
+		buf[13] = c;
+		buf[14] = d;
+
+		/*for (int i = 0; i <= 48; i++) {
+			printf("%i: %02x ", i, buf[i]);
+		}
+		printf("\n");
+		printf("\n");*/
+
+		res = hid_write(handle, buf, output_buffer_length);
+		int retries = 0;
+
+		/*for (int i = 0; i < 50; i++) {
+			res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+			for (int i = 0; i <= 100; i++) {
+				printf("%i: %02x ", i, buf[i]);
+			}
+			printf("\n");
+			printf("\n");*/
+		
+
+		//while (1) {
+		//	buf[0] != 21;
+		//}
+
+		//while (1) {}
+
+		while (1) {
+			res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+			//for (int i = 0; i <= 60; i++) {
+			//	printf("%i: %02x ", i, buf[i]);
+			//}
+			//printf("\n");
+			//printf("\n");
+			if (buf[0] == 0x21) {
+				if (buf[14] == 0x58) {
+					return;
+				}
+			}
+			retries++;
+			if (retries > 8 || res == 0) {
+				break;
+			}
+		}
+	}
+}
+
+
+void Joycon::set_vib_config(int a, int b, int c, int d) {
+	unsigned char buf[0x400];
+	memset(buf, 0, 0x40);
+
+	static int output_buffer_length = 49; //CTCAER - USE THIS - for some reason the pkt sub command was positioned right but all the subcommand 21 21 stuff was offset plus one byte
+	int res = 0;
+
+	memset(buf, 0, sizeof(buf));
+	auto hdr = (brcm_hdr*)buf;
+	hdr->cmd = 0x10;
+	hdr->rumble[0] = timing_byte & 0xF;
+	timing_byte++;
+	buf[6] = a;
+	buf[7] = b;
+	buf[8] = c;
+	buf[9] = d;
+
+	/*for (int i = 0; i <= 48; i++) {
+		printf("%i: %02x ", i, buf[i]);
+	}
+	printf("\n");
+	printf("\n");*/
+
+	res = hid_write(handle, buf, output_buffer_length);
+
+	res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+	for (int i = 0; i <= 100; i++) {
+		printf("%i: %02x ", i, buf[i]);
+	}
+}
+
+int Joycon::init_bt() {
+
+	this->bluetooth = true;
+
+	unsigned char buf[0x40];
+	memset(buf, 0, 0x40);
+
+
+	// set blocking to ensure command is recieved:
+	hid_set_nonblocking(this->handle, 0);
+
+	// Enable vibration
+	printf("Enabling vibration...\n");
+	buf[0] = 0x01; // Enabled
+	send_subcommand(0x1, 0x48, buf, 1);
+
+	// Enable IMU data
+	printf("Enabling IMU data...\n");
+	buf[0] = 0x01; // Enabled
+	send_subcommand(0x01, 0x40, buf, 1);
+
+
+	// Set input report mode (to push at 60hz)
+	// x00	Active polling mode for IR camera data. Answers with more than 300 bytes ID 31 packet
+	// x01	Active polling mode
+	// x02	Active polling mode for IR camera data.Special IR mode or before configuring it ?
+	// x21	Unknown.An input report with this ID has pairing or mcu data or serial flash data or device info
+	// x23	MCU update input report ?
+	// 30	NPad standard mode. Pushes current state @60Hz. Default in SDK if arg is not in the list
+	// 31	NFC mode. Pushes large packets @60Hz
+	printf("Set input report mode to 0x30...\n");
+	buf[0] = 0x30;
+	send_subcommand(0x01, 0x03, buf, 1);
+
+	GetCalibrationData();
+	
+	if (this->left_right == 1 || this->left_right == 3) {
+		printf("Successfully initialized %s!\n", this->name.c_str());
+		return 0;
+	}
+
+	int Ringconretries = 0;
+
+step1:
+
+	// Enable MCU data
+	int retries2 = 0;
+	while (1) {
+		printf("Enabling MCU data 22 1\n");
+		buf[0] = 0x01; // Enabled - 00 = suspend, 01 = resume
+		send_subcommand(0x01, 0x22, buf, 1);
+
+		int retries = 0;
+		while (1) {
+			int res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+			/*for (int i = 0; i <= 100; i++) {
+				printf("%i: %02x ", i, buf[i]);
+			}
+			printf("\n");
+			printf("\n");*/
+			if (*(u16*)&buf[0xD] == 0x2280)
+				goto step3;
+
+			retries++;
+			if (retries > 8 || res == 0)
+				break;
+		}
+		retries2++;
+		/*if (retries2 > 8) {
+			goto step20;
+		}	*/
+	}
+
+step2:
+	// Request MCU mode status - This step doesnt work when using 0x30
+	while (1) {
+		printf("Requesting MCU data 11 1 ...\n");
+		buf[0] = 0x00; //Output report x11, sub command 0x01, no arguments
+		send_subcommand(0x11, 0x01, buf, 0);
+
+		int retries = 0;
+		while (1) {
+			int res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+			/*for (int i = 0; i <= 60; i++) {
+				printf("%i: %02x ", i, buf[i]);
+			}
+			printf("\n");
+			printf("\n");*/
+			if (buf[0] == 0x31) {
+				for (int i = 49; i <= 56; i++) {
+					printf("%i: %02x ", i, buf[i]);
+				}
+				//printf("%02x ", buf[49]);
+				//if (buf[49] == 0x01 && buf[56] == 0x06) // MCU state is Initializing
+				// *(u16*)buf[52]LE x04 in lower than 3.89fw, x05 in 3.89
+				// *(u16*)buf[54]LE x12 in lower than 3.89fw, x18 in 3.89
+				// buf[56]: mcu mode state
+				if (buf[49] == 0x01 && buf[56] == 0x01) // MCU state is Standby
+					goto step3;
+
+			}
+			retries++;
+			if (retries > 8 || res == 0)
+				break;
+		}
+	}
+
+step3:
+
+	// Enable MCU polling
+	//printf("Enabling MCU polling...\n");
+	//buf[0] = 0x01; // Enabled empty 0, 5, 6 Not 1 49:1 56:1 2 49:2A 56:0
+	//send_subcommand(0x01, 0x24, buf, 1);
+	retries2 = 0;
+	//Set MCU Mode
+	while (1) {
+		printf("Enabling MCU data 21 21 0 3...\n");
+		static int output_buffer_length = 49; //CTCAER - USE THIS - for some reason the pkt sub command was positioned right but all the subcommand 21 21 stuff was offset plus one byte
+		int res = 0;
+
+		memset(buf, 0, sizeof(buf));
+		auto hdr = (brcm_hdr*)buf;
+		//auto pkt = (brcm_cmd_01*)(hdr+1);
+		hdr->cmd = 0x01;
+		hdr->rumble[0] = timing_byte & 0xF;
+		timing_byte++;
+		buf[10] = 0x21;
+		buf[11] = 0x21;
+		buf[12] = 0x00;
+		buf[13] = 0x03;
+		//pkt->subcmd_21_21.mcu_cmd = 0x21; // Set MCU mode cmd
+		//pkt->subcmd_21_21.mcu_subcmd = 0x00; // Set MCU mode cmd
+		//pkt->subcmd_21_21.mcu_mode = 0x03; // MCU mode - 1: Standby, 4: NFC, 5: IR, 6: Initializing/FW Update?
+
+		buf[48] = mcu_crc8_calc(buf + 12, 36);
+		/*for (int i = 0; i <= 48; i++) {
+			printf("%i: %02x ", i, buf[i]);
+		}
+		printf("\n");*/
+
+		res = hid_write(handle, buf, output_buffer_length);
+		int retries = 0;
+
+		while (1) {
+			res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+			/*for (int i = 0; i <= 100; i++) {
+				printf("%i: %02x ", i, buf[i]);
+			}
+			printf("\n");*/
+			if (buf[0] == 0x21) {
+				// *(u16*)buf[18]LE x04 in lower than 3.89fw, x05 in 3.89
+				// *(u16*)buf[20]LE x12 in lower than 3.89fw, x18 in 3.89
+				if (buf[15] == 0x01 && buf[22] == 0x03) // Mcu mode is standby
+					goto step5;
+			}
+			retries++;
+			if (retries > 8 || res == 0) {
+				break;
+			}
+		}
+		retries2++;
+		/*if (retries2 > 8) {
+			goto step20;
+		}*/
+	}
+
+step4:
+	// Request MCU mode status
+	while (1) {
+		printf("Enabling MCU data 11 1...\n");
+		static int output_buffer_length = 49;
+		int res = 0;
+		memset(buf, 0, sizeof(buf));
+		auto hdr = (brcm_hdr*)buf;
+		auto pkt = (brcm_cmd_01*)(hdr + 1);
+		hdr->cmd = 0x11;
+		hdr->rumble[0] = timing_byte & 0xF;
+		timing_byte++;
+		pkt->subcmd = 0x01; //subcmd is in the right byte unlike the union stuff
+
+		/*for (int i = 0; i <= 48; i++) {
+			printf("%i: %02x ", i, buf[i]);
+		}
+		printf("\n");*/
+
+		res = hid_write(handle, buf, output_buffer_length);
+		int retries = 0;
+		while (1) {
+			res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+			/*for (int i = 0; i <= 60; i++) {
+				printf("%i: %02x ", i, buf[i]);
+			}
+			printf("\n");
+			printf("\n");*/
+			if (buf[0] == 0x31) {
+				// *(u16*)buf[52]LE x04 in lower than 3.89fw, x05 in 3.89
+				// *(u16*)buf[54]LE x12 in lower than 3.89fw, x18 in 3.89
+				if (buf[49] == 0x01 && buf[56] == 0x03) // Mcu mode is Ringcon
+					goto step5;
+			}
+			retries++;
+			if (retries > 8 || res == 0)
+				break;
+		}
+	}
+
+step5:
+
+	//Set MCU Mode
+	while (1) {
+		printf("Enabling MCU data 21 21 1 1...\n");
+
+		static int output_buffer_length = 49; //CTCAER
+		int res = 0;
+
+		memset(buf, 0, sizeof(buf));
+		auto hdr = (brcm_hdr*)buf;
+		hdr->cmd = 0x01;
+		hdr->rumble[0] = timing_byte & 0xF;
+		timing_byte++;
+		buf[10] = 0x21;
+		buf[11] = 0x21;
+		buf[12] = 0x01;
+		buf[13] = 0x01;
+
+		buf[48] = mcu_crc8_calc(buf + 12, 36);
+
+		/*for (int i = 0; i <= 48; i++) {
+			printf("%i: %02x ", i, buf[i]);
+		}
+		printf("\n");
+		printf("\n");*/
+
+		res = hid_write(handle, buf, output_buffer_length);
+		int retries = 0;
+
+		while (1) {
+			res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+			/*for (int i = 0; i <= 100; i++) {
+				printf("%i: %02x ", i, buf[i]);
+			}
+			printf("\n");
+			printf("\n");*/
+			if (buf[0] == 0x21) {
+				if (buf[15] == 0x09 && buf[17] == 0x01) // Mcu mode is external ready
+					goto step6;
+			}
+			retries++;
+			if (retries > 8 || res == 0)
+				break;
+		}
+	}
+
+step6:
+
+	retries2 = 0;
+	printf("Get ext data 59.");
+	while (1) {
+		printf(".");
+
+		static int output_buffer_length = 49; //CTCAER
+		int res = 0;
+
+		memset(buf, 0, sizeof(buf));
+		auto hdr = (brcm_hdr*)buf;
+		hdr->cmd = 0x01;
+		hdr->rumble[0] = timing_byte & 0xF;
+		timing_byte++;
+		buf[10] = 0x59;
+
+		res = hid_write(handle, buf, output_buffer_length);
+		int retries = 0;
+
+		while (1) {
+			res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+
+			if (buf[0] == 0x21) {
+				if (buf[14] == 0x59 && buf[16] == 0x20) { // Mcu mode is ringcon ready (Note:0x20 is the Ringcon ext device id - it may also be the fm_main_ver) No ringcon is buf[15]=fe. With ringcon buf[15]=0
+					goto step7;
+				}
+			}
+			retries++;
+			if (retries > 8 || res == 0)
+				break;
+		}
+		retries2++;
+		if (retries2 > 28 || res == 0) {
+			printf("Enabling IMU data...\n");
+			buf[0] = 0x01; // Enabled
+			send_subcommand(0x01, 0x40, buf, 1);
+			//GetCalibrationData();
+
+			printf("Successfully initialized but no Ringcon detected %s!\n", this->name.c_str());
+			return 0;
+		}
+	}
+
+step7:
+
+	ringconattached = true;
+	// Enable IMU data
+	printf("Enabling IMU data 3...\n");
+	buf[0] = 0x03; // Ringcon IMU enabled 
+	send_subcommand(0x01, 0x40, buf, 1);
+	int res = 0;
+	int retries = 0;
+	while (1) {
+		res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+		/*for (int i = 0; i <= 60; i++) {
+			printf("%i: %02x ", i, buf[i]);
+		}
+		printf("\n");
+		printf("\n");*/
+		if (buf[0] == 0x21) {
+			if (buf[14] == 0x40) {
+				//break;
+				printf("Enabling IMU data 1...\n");
+				buf[0] = 0x02;
+				send_subcommand(0x01, 0x40, buf, 1);
+				buf[0] = 0x01;  
+				send_subcommand(0x01, 0x40, buf, 1);
+				Ringconretries++; //Was having issues with the Gyro being screwy sometimes.
+				if (Ringconretries <= 1) {
+					GetCalibrationData();
+					goto step1;
+				}
+				else {
+					break;
+				}
+			}
+		}
+		retries++;
+		if (retries > 20 || res == 0)
+		break;
+	}
+
+	//unsigned long long timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	//IntToByteArray(timestamp);
+
+	while (1) {
+		printf("Get ext dev in format config 5C...\n");
+
+		static int output_buffer_length = 49; //CTCAER 
+		int res = 0;
+
+		memset(buf, 0, sizeof(buf));
+		auto hdr = (brcm_hdr*)buf;
+		hdr->cmd = 0x01;
+		hdr->rumble[0] = timing_byte & 0xF;
+		timing_byte++;
+		buf[10] = 0x5C;
+		buf[11] = 0x06;
+		buf[12] = 0x03;
+		buf[13] = 0x25;
+		buf[14] = 0x06;
+		buf[19] = 0x1C;
+		buf[20] = 0x16;
+		buf[21] = 237;// 0xCD;//+
+		buf[22] = 52;// 0xA6;//+
+		buf[23] = 54;// 0x2B;//+ These change but appear to be connected with the last values
+		buf[27] = 10;//timestampbuffer[0];// 27-32 = timestamp
+		buf[28] = 100;//timestampbuffer[1];
+		buf[29] = 11;//timestampbuffer[2];
+		buf[30] = 230;//timestampbuffer[3];
+		buf[31] = 169;//timestampbuffer[4];
+		buf[32] = 34;//timestampbuffer[5];
+		buf[33] = 0x00;//timestampbuffer[6];
+		buf[34] = 0x00;//timestampbuffer[7]; 
+		buf[35] = 0x04;
+		buf[43] = 0x90;
+		buf[44] = 0xA8;
+		buf[45] = 225;// 0xC1;//+
+		buf[46] = 52;// 0x34;// 0xA6;//+
+		buf[47] = 54;// 0x36;// 0x2B;//+ These numbers have something to do with the input report from 40 3 */
+
+		//21/10/20  92 6 3 37 6 0 0 0 0 28 22 205 166 43 0 0 0 197 20 147 187 160 13 0 0 4 0 0 0 0 0 0 0 144 168 193 166 43 0
+		//08/10/20  92 6 3 37 6 0 0 0 0 28 22 237 52  54 0 0 0 10 100  11 230 169 34 0 0 4 0 0 0 0 0 0 0 144 168 225 52  54 0
+
+
+		res = hid_write(handle, buf, output_buffer_length);
+		int retries = 0;
+		while (1) {
+			res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+			/*for (int i = 0; i <= 60; i++) {
+				printf("%i: %02x ", i, buf[i]);
+			}
+			printf("\n");
+			printf("\n");*/
+			if (buf[0] == 0x21) {
+				if (buf[14] == 0x5C) { // Ringcon config set
+					goto step8;
+				}
+				/*if (buf[14] == 0x40) { // Sensor put to sleep for some reason. Try again.
+					printf("Enabling IMU data 1...\n");
+					buf[0] = 0x01; // Ringcon IMU enabled 
+					send_subcommand(0x01, 0x40, buf, 1); 
+					goto step1;
+				}*/
+			}
+			retries++;
+			if (retries > 8 || res == 0)
+				break;
+		}
+	}
+
+step8:
+	while (1) {
+		printf("Start external polling 5A...\n"); //This may only be for the config stuff. The app turns it off after config then calls the MCU again. If you call the 5c command when the polling is enbled, it will fail.
+
+		static int output_buffer_length = 49; //CTCAER
+		int res = 0;
+
+		memset(buf, 0, sizeof(buf));
+		auto hdr = (brcm_hdr*)buf;
+		hdr->cmd = 0x01;
+		hdr->rumble[0] = timing_byte & 0xF;
+		timing_byte++;
+		buf[10] = 0x5A;
+		buf[11] = 0x04;
+		buf[12] = 0x01;
+		buf[13] = 0x01;
+		buf[14] = 0x02;
+
+		res = hid_write(handle, buf, output_buffer_length);
+		int retries = 0;
+
+		while (1) {
+			res = hid_read_timeout(handle, buf, sizeof(buf), 64);
+			/*for (int i = 0; i <= 63; i++) {
+				printf("%i: %02x ", i, buf[i]);
+			}
+			printf("\n");
+			printf("\n");*/
+			if (buf[0] == 0x21) {
+				if (buf[14] == 0x5A) {// Mcu mode is ringcon polling
+					goto step13;
+				}
+			}
+			retries++;
+			if (retries > 8 || res == 0)
+				break;
+		}
+	}
+
+step13:
+	printf("Set Ext Config 58 - 4 4 12 2...\n");
+	set_ext_config(0x04, 0x04, 0x12, 0x02);
+
+	goto step20;
+
+tep20:
+
+// Enable IMU data
+	//printf("Enabling IMU data...\n");
+	//buf[0] = 0x01; // Enabled
+	//send_subcommand(0x01, 0x40, buf, 1);
+	//GetCalibrationData();
+	// Enable IMU data
+	//printf("Enabling IMU data 2...\n");
+	//buf[0] = 0x02;
+	//send_subcommand(0x01, 0x40, buf, 1);
+
+
+	printf("Successfully initialized %s!\n", this->name.c_str());
+	return 0;
+}
+
+void init_usb() {
+
+	this->bluetooth = false;
+
+	unsigned char buf[0x400];
+	memset(buf, 0, 0x400);
+
+	// set blocking:
+	// this insures we get the MAC Address
+	hid_set_nonblocking(this->handle, 0);
+
+	//Get MAC Left
+	printf("Getting MAC...\n");
+	memset(buf, 0x00, 0x40);
+	buf[0] = 0x80;
+	buf[1] = 0x01;
+	hid_exchange(this->handle, buf, 0x2);
+
+	if (buf[2] == 0x3) {
+		printf("%s disconnected!\n", this->name.c_str());
+	}
+	else {
+		printf("Found %s, MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", this->name.c_str(), buf[9], buf[8], buf[7], buf[6], buf[5], buf[4]);
+	}
+
+	// set non-blocking:
+	//hid_set_nonblocking(jc->handle, 1);
+
+	// Do handshaking
+	printf("Doing handshake...\n");
+	memset(buf, 0x00, 0x40);
+	buf[0] = 0x80;
+	buf[1] = 0x02;
+	hid_exchange(this->handle, buf, 0x2);
+
+	// Switch baudrate to 3Mbit
+	printf("Switching baudrate...\n");
+	memset(buf, 0x00, 0x40);
+	buf[0] = 0x80;
+	buf[1] = 0x03;
+	hid_exchange(this->handle, buf, 0x2);
+
+	//Do handshaking again at new baudrate so the firmware pulls pin 3 low?
+	printf("Doing handshake...\n");
+	memset(buf, 0x00, 0x40);
+	buf[0] = 0x80;
+	buf[1] = 0x02;
+	hid_exchange(this->handle, buf, 0x2);
+
+	//Only talk HID from now on
+	printf("Only talk HID...\n");
+	memset(buf, 0x00, 0x40);
+	buf[0] = 0x80;
+	buf[1] = 0x04;
+	hid_exchange(this->handle, buf, 0x2);
+
+	// Enable vibration
+	printf("Enabling vibration...\n");
+	memset(buf, 0x00, 0x400);
+	buf[0] = 0x01; // Enabled
+	send_subcommand(0x1, 0x48, buf, 1);
+
+	// Enable IMU data
+	printf("Enabling IMU data...\n");
+	memset(buf, 0x00, 0x400);
+	buf[0] = 0x01; // Enabled
+	send_subcommand(0x1, 0x40, buf, 1);
+
+	printf("Successfully initialized %s!\n", this->name.c_str());
+}
+
+void deinit_usb() {
+	unsigned char buf[0x40];
+	memset(buf, 0x00, 0x40);
+
+	//Let the Joy-Con talk BT again    
+	buf[0] = 0x80;
+	buf[1] = 0x05;
+	hid_exchange(this->handle, buf, 0x2);
+	printf("Deinitialized %s\n", this->name.c_str());
+}
+
+
+// calibrated sticks:
+// Credit to Hypersect (Ryan Juckett)
+// http://blog.hypersect.com/interpreting-analog-sticks/
+void CalcAnalogStick() {
+
+	if (this->left_right == 1) {
+		CalcAnalogStick2(
+			this->stick.CalX,
+			this->stick.CalY,
+			this->stick.x,
+			this->stick.y,
+			this->stick_cal_x_l,
+			this->stick_cal_y_l);
+
+	}
+	else if (this->left_right == 2) {
+		CalcAnalogStick2(
+			this->stick.CalX,
+			this->stick.CalY,
+			this->stick.x,
+			this->stick.y,
+			this->stick_cal_x_r,
+			this->stick_cal_y_r);
+
+	}
+	else if (this->left_right == 3) {
+		CalcAnalogStick2(
+			this->stick.CalX,
+			this->stick.CalY,
+			this->stick.x,
+			this->stick.y,
+			this->stick_cal_x_l,
+			this->stick_cal_y_l);
+
+		CalcAnalogStick2(
+			this->stick2.CalX,
+			this->stick2.CalY,
+			this->stick2.x,
+			this->stick2.y,
+			this->stick_cal_x_r,
+			this->stick_cal_y_r);
+	}
+}
+
+
+void CalcAnalogStick2
+(
+	float& pOutX,       // out: resulting stick X value
+	float& pOutY,       // out: resulting stick Y value
+	uint16_t x,              // in: initial stick X value
+	uint16_t y,              // in: initial stick Y value
+	uint16_t x_calc[3],      // calc -X, CenterX, +X
+	uint16_t y_calc[3]       // calc -Y, CenterY, +Y
+)
+{
+
+	float x_f, y_f;
+	// Apply Joy-Con center deadzone. 0xAE translates approx to 15%. Pro controller has a 10% () deadzone
+	float deadZoneCenter = 0.15f;
+	// Add a small ammount of outer deadzone to avoid edge cases or machine variety.
+	float deadZoneOuter = 0.10f;
+
+	// convert to float based on calibration and valid ranges per +/-axis
+	x = clamp(x, x_calc[0], x_calc[2]);
+	y = clamp(y, y_calc[0], y_calc[2]);
+	if (x >= x_calc[1]) {
+		x_f = (float)(x - x_calc[1]) / (float)(x_calc[2] - x_calc[1]);
+	}
+	else {
+		x_f = -((float)(x - x_calc[1]) / (float)(x_calc[0] - x_calc[1]));
+	}
+	if (y >= y_calc[1]) {
+		y_f = (float)(y - y_calc[1]) / (float)(y_calc[2] - y_calc[1]);
+	}
+	else {
+		y_f = -((float)(y - y_calc[1]) / (float)(y_calc[0] - y_calc[1]));
+	}
+
+	// Interpolate zone between deadzones
+	float mag = sqrtf(x_f * x_f + y_f * y_f);
+	if (mag > deadZoneCenter) {
+		// scale such that output magnitude is in the range [0.0f, 1.0f]
+		float legalRange = 1.0f - deadZoneOuter - deadZoneCenter;
+		float normalizedMag = min(1.0f, (mag - deadZoneCenter) / legalRange);
+		float scale = normalizedMag / mag;
+		pOutX = (x_f * scale);
+		pOutY = (y_f * scale);
+	}
+	else {
+		// stick is in the inner dead zone
+		pOutX = 0.0f;
+		pOutY = 0.0f;
+	}
+}
+
+// SPI (@CTCaer):
+
+int get_spi_data(uint32_t offset, const uint16_t read_len, uint8_t* test_buf) {
+	int res;
+	uint8_t buf[0x100];
+	while (1) {
+		memset(buf, 0, sizeof(buf));
+		auto hdr = (brcm_hdr*)buf;
+		auto pkt = (brcm_cmd_01*)(hdr + 1);
+		hdr->cmd = 1;
+		hdr->rumble[0] = timing_byte;
+
+		buf[1] = timing_byte;
+
+		timing_byte++;
+		if (timing_byte > 0xF) {
+			timing_byte = 0x0;
+		}
+		pkt->subcmd = 0x10;
+		pkt->offset = offset;
+		pkt->size = read_len;
+
+		for (int i = 11; i < 22; ++i) {
+			buf[i] = buf[i + 3];
+		}
+
+		res = hid_write(handle, buf, sizeof(*hdr) + sizeof(*pkt));
+
+		res = hid_read(handle, buf, sizeof(buf));
+
+		if ((*(uint16_t*)&buf[0xD] == 0x1090) && (*(uint32_t*)&buf[0xF] == offset)) {
+			break;
+		}
+	}
+	if (res >= 0x14 + read_len) {
+		for (int i = 0; i < read_len; i++) {
+			test_buf[i] = buf[0x14 + i];
+		}
+	}
+
+	return 0;
+}
+
+int write_spi_data(uint32_t offset, const uint16_t write_len, uint8_t* test_buf) {
+	int res;
+	uint8_t buf[0x100];
+	int error_writing = 0;
+	while (1) {
+		memset(buf, 0, sizeof(buf));
+		auto hdr = (brcm_hdr*)buf;
+		auto pkt = (brcm_cmd_01*)(hdr + 1);
+		hdr->cmd = 1;
+		hdr->rumble[0] = timing_byte;
+		timing_byte++;
+		if (timing_byte > 0xF) {
+			timing_byte = 0x0;
+		}
+		pkt->subcmd = 0x11;
+		pkt->offset = offset;
+		pkt->size = write_len;
+		for (int i = 0; i < write_len; i++) {
+			buf[0x10 + i] = test_buf[i];
+		}
+		res = hid_write(handle, buf, sizeof(*hdr) + sizeof(*pkt) + write_len);
+
+		res = hid_read(handle, buf, sizeof(buf));
+
+		if (*(uint16_t*)&buf[0xD] == 0x1180)
+			break;
+
+		error_writing++;
+		if (error_writing == 125) {
+			return 1;
+		}
+	}
+
+	return 0;
+
+}
+
+void GetCalibrationData() {
+	printf("Getting calibration data...\n");
+	memset(factory_stick_cal, 0, 0x12);
+	memset(user_stick_cal, 0, 0x16);
+	memset(sensor_model, 0, 0x6);
+	memset(stick_model, 0, 0x12);
+	memset(factory_sensor_cal, 0, 0x18);
+	memset(user_sensor_cal, 0, 0x1A);
+	memset(factory_sensor_cal_calm, 0, 0xC);
+	memset(user_sensor_cal_calm, 0, 0xC);
+	memset(sensor_cal, 0, sizeof(sensor_cal));
+	memset(stick_cal_x_l, 0, sizeof(stick_cal_x_l));
+	memset(stick_cal_y_l, 0, sizeof(stick_cal_y_l));
+	memset(stick_cal_x_r, 0, sizeof(stick_cal_x_r));
+	memset(stick_cal_y_r, 0, sizeof(stick_cal_y_r));
+
+
+	get_spi_data(0x6020, 0x18, factory_sensor_cal);
+	get_spi_data(0x603D, 0x12, factory_stick_cal);
+	get_spi_data(0x6080, 0x6, sensor_model);
+	get_spi_data(0x6086, 0x12, stick_model);
+	get_spi_data(0x6098, 0x12, &stick_model[0x12]);
+	get_spi_data(0x8010, 0x16, user_stick_cal);
+	get_spi_data(0x8026, 0x1A, user_sensor_cal);
+
+
+	// get stick calibration data:
+
+	// factory calibration:
+
+	if (this->left_right == 1 || this->left_right == 3) {
+		stick_cal_x_l[1] = (factory_stick_cal[4] << 8) & 0xF00 | factory_stick_cal[3];
+		stick_cal_y_l[1] = (factory_stick_cal[5] << 4) | (factory_stick_cal[4] >> 4);
+		stick_cal_x_l[0] = stick_cal_x_l[1] - ((factory_stick_cal[7] << 8) & 0xF00 | factory_stick_cal[6]);
+		stick_cal_y_l[0] = stick_cal_y_l[1] - ((factory_stick_cal[8] << 4) | (factory_stick_cal[7] >> 4));
+		stick_cal_x_l[2] = stick_cal_x_l[1] + ((factory_stick_cal[1] << 8) & 0xF00 | factory_stick_cal[0]);
+		stick_cal_y_l[2] = stick_cal_y_l[1] + ((factory_stick_cal[2] << 4) | (factory_stick_cal[2] >> 4));
+
+	}
+
+	if (this->left_right == 2 || this->left_right == 3) {
+		stick_cal_x_r[1] = (factory_stick_cal[10] << 8) & 0xF00 | factory_stick_cal[9];
+		stick_cal_y_r[1] = (factory_stick_cal[11] << 4) | (factory_stick_cal[10] >> 4);
+		stick_cal_x_r[0] = stick_cal_x_r[1] - ((factory_stick_cal[13] << 8) & 0xF00 | factory_stick_cal[12]);
+		stick_cal_y_r[0] = stick_cal_y_r[1] - ((factory_stick_cal[14] << 4) | (factory_stick_cal[13] >> 4));
+		stick_cal_x_r[2] = stick_cal_x_r[1] + ((factory_stick_cal[16] << 8) & 0xF00 | factory_stick_cal[15]);
+		stick_cal_y_r[2] = stick_cal_y_r[1] + ((factory_stick_cal[17] << 4) | (factory_stick_cal[16] >> 4));
+	}
+
+
+	// if there is user calibration data:
+	if ((user_stick_cal[0] | user_stick_cal[1] << 8) == 0xA1B2) {
+		stick_cal_x_l[1] = (user_stick_cal[6] << 8) & 0xF00 | user_stick_cal[5];
+		stick_cal_y_l[1] = (user_stick_cal[7] << 4) | (user_stick_cal[6] >> 4);
+		stick_cal_x_l[0] = stick_cal_x_l[1] - ((user_stick_cal[9] << 8) & 0xF00 | user_stick_cal[8]);
+		stick_cal_y_l[0] = stick_cal_y_l[1] - ((user_stick_cal[10] << 4) | (user_stick_cal[9] >> 4));
+		stick_cal_x_l[2] = stick_cal_x_l[1] + ((user_stick_cal[3] << 8) & 0xF00 | user_stick_cal[2]);
+		stick_cal_y_l[2] = stick_cal_y_l[1] + ((user_stick_cal[4] << 4) | (user_stick_cal[3] >> 4));
+	}
+	else {
+	}
+
+	if ((user_stick_cal[0xB] | user_stick_cal[0xC] << 8) == 0xA1B2) {
+		stick_cal_x_r[1] = (user_stick_cal[14] << 8) & 0xF00 | user_stick_cal[13];
+		stick_cal_y_r[1] = (user_stick_cal[15] << 4) | (user_stick_cal[14] >> 4);
+		stick_cal_x_r[0] = stick_cal_x_r[1] - ((user_stick_cal[17] << 8) & 0xF00 | user_stick_cal[16]);
+		stick_cal_y_r[0] = stick_cal_y_r[1] - ((user_stick_cal[18] << 4) | (user_stick_cal[17] >> 4));
+		stick_cal_x_r[2] = stick_cal_x_r[1] + ((user_stick_cal[20] << 8) & 0xF00 | user_stick_cal[19]);
+		stick_cal_y_r[2] = stick_cal_y_r[1] + ((user_stick_cal[21] << 4) | (user_stick_cal[20] >> 4));
+	}
+	else {
+		//FormJoy::myform1->textBox_rstick_ucal->Text = L"R Stick User:\r\nNo calibration";
+		//printf("no user Calibration data for right stick.\n");
+	}
+
+	// get gyro / accelerometer calibration data:
+
+	// factory calibration:
+
+	// Acc cal origin position
+	sensor_cal[0][0] = uint16_to_int16(factory_sensor_cal[0] | factory_sensor_cal[1] << 8);
+	sensor_cal[0][1] = uint16_to_int16(factory_sensor_cal[2] | factory_sensor_cal[3] << 8);
+	sensor_cal[0][2] = uint16_to_int16(factory_sensor_cal[4] | factory_sensor_cal[5] << 8);
+
+	// Gyro cal origin position
+	sensor_cal[1][0] = uint16_to_int16(factory_sensor_cal[0xC] | factory_sensor_cal[0xD] << 8);
+	sensor_cal[1][1] = uint16_to_int16(factory_sensor_cal[0xE] | factory_sensor_cal[0xF] << 8);
+	sensor_cal[1][2] = uint16_to_int16(factory_sensor_cal[0x10] | factory_sensor_cal[0x11] << 8);
+
+	// user calibration:
+	if ((user_sensor_cal[0x0] | user_sensor_cal[0x1] << 8) == 0xA1B2) {
+
+		// Acc cal origin position
+		sensor_cal[0][0] = uint16_to_int16(user_sensor_cal[2] | user_sensor_cal[3] << 8);
+		sensor_cal[0][1] = uint16_to_int16(user_sensor_cal[4] | user_sensor_cal[5] << 8);
+		sensor_cal[0][2] = uint16_to_int16(user_sensor_cal[6] | user_sensor_cal[7] << 8);
+
+		// Gyro cal origin position
+		sensor_cal[1][0] = uint16_to_int16(user_sensor_cal[0xE] | user_sensor_cal[0xF] << 8);
+		sensor_cal[1][1] = uint16_to_int16(user_sensor_cal[0x10] | user_sensor_cal[0x11] << 8);
+		sensor_cal[1][2] = uint16_to_int16(user_sensor_cal[0x12] | user_sensor_cal[0x13] << 8);
+	}
+	else {
+		//FormJoy::myform1->textBox_6axis_ucal->Text = L"\r\n\r\nUser:\r\nNo calibration";
+	}
+
+	// Use SPI calibration and convert them to SI acc unit
+	acc_cal_coeff[0] = (float)(1.0 / (float)(16384 - uint16_to_int16(sensor_cal[0][0]))) * 4.0f * 9.8f;
+	acc_cal_coeff[1] = (float)(1.0 / (float)(16384 - uint16_to_int16(sensor_cal[0][1]))) * 4.0f * 9.8f;
+	acc_cal_coeff[2] = (float)(1.0 / (float)(16384 - uint16_to_int16(sensor_cal[0][2]))) * 4.0f * 9.8f;
+
+	// Use SPI calibration and convert them to SI gyro unit
+	gyro_cal_coeff[0] = (float)(936.0 / (float)(13371 - uint16_to_int16(sensor_cal[1][0])) * 0.01745329251994);
+	gyro_cal_coeff[1] = (float)(936.0 / (float)(13371 - uint16_to_int16(sensor_cal[1][1])) * 0.01745329251994);
+	gyro_cal_coeff[2] = (float)(936.0 / (float)(13371 - uint16_to_int16(sensor_cal[1][2])) * 0.01745329251994);
+}
