@@ -159,3 +159,4 @@ void Joycon::set_vib_config(int a, int b, int c, int d) {
 		printf("%i: %02x ", i, buf[i]);
 	}
 }
+

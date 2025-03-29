@@ -1,163 +1,4 @@
-
-void Joycon::rumble4(float real_LF, float real_HF, uint8_t hfa, uint16_t lfa) {
-
-	real_LF = clamp(real_LF, 40.875885f, 626.286133f);
-	real_HF = clamp(real_HF, 81.75177, 1252.572266f);
-
-
-	uint16_t hf = ((uint8_t)round(log2((double)real_HF * 0.01) * 32.0) - 0x60) * 4;
-	uint8_t lf = (uint8_t)round(log2((double)real_LF * 0.01) * 32.0) - 0x40;
-
-	rumble2(hf, hfa, lf, lfa);
-}
-
-void Joycon::rumble_freq(uint16_t hf, uint8_t hfa, uint8_t lf, uint16_t lfa) {
-	unsigned char buf[0x400];
-	memset(buf, 0, 0x40);
-
-
-	//int hf		= HF;
-	//int hf_amp	= HFA;
-	//int lf		= LF;
-	//int lf_amp	= LFA;
-	// maybe:
-	//int hf_band = hf + hf_amp;
-
-	int off = 0;// offset
-	if (this->left_right == 2) {
-		off = 4;
-	}
-
-
-	// Byte swapping
-	buf[0 + off] = hf & 0xFF;
-	buf[1 + off] = hfa + ((hf >> 8) & 0xFF); //Add amp + 1st byte of frequency to amplitude byte
-
-											 // Byte swapping
-	buf[2 + off] = lf + ((lfa >> 8) & 0xFF); //Add freq + 1st byte of LF amplitude to the frequency byte
-	buf[3 + off] = lfa & 0xFF;
-
-
-	// set non-blocking:
-	hid_set_nonblocking(this->handle, 1);
-
-	send_command(0x10, (uint8_t*)buf, 0x9);
-}
-
-void Joycon::setGyroOffsets() {
-	float thresh = 0.1;
-	if (abs(this->gyro.roll) > thresh || abs(this->gyro.pitch) > thresh || abs(this->gyro.yaw) > thresh) {
-		return;
-	}
-
-	//average = current + ((newData - current) / n);
-	this->gyro.offset.n += 1;
-	this->gyro.offset.roll = this->gyro.offset.roll + ((this->gyro.roll - this->gyro.offset.roll) / this->gyro.offset.n);
-	this->gyro.offset.pitch = this->gyro.offset.pitch + ((this->gyro.pitch - this->gyro.offset.pitch) / this->gyro.offset.n);
-	this->gyro.offset.yaw = this->gyro.offset.yaw + ((this->gyro.yaw - this->gyro.offset.yaw) / this->gyro.offset.n);
-	//this->gyro.offset.roll	= this->gyro.roll;
-	//this->gyro.offset.pitch = this->gyro.pitch;
-	//this->gyro.offset.yaw	= this->gyro.yaw;
-};
-
-
-
-void Joycon::set_ext_config(int a, int b, int c, int d) {
-	unsigned char buf[0x400];
-	memset(buf, 0, 0x40);
-
-	while (1) {
-		printf("Set Ext Config 58\n");
-
-		static int output_buffer_length = 49; //CTCAER - USE THIS - for some reason the pkt sub command was positioned right but all the subcommand 21 21 stuff was offset plus one byte
-		int res = 0;
-
-		memset(buf, 0, sizeof(buf));
-		auto hdr = (brcm_hdr*)buf;
-		hdr->cmd = 0x01;
-		hdr->rumble[0] = timing_byte & 0xF;
-		timing_byte++;
-		buf[10] = 0x58;
-		buf[11] = a;
-		buf[12] = b;
-		buf[13] = c;
-		buf[14] = d;
-
-		/*for (int i = 0; i <= 48; i++) {
-			printf("%i: %02x ", i, buf[i]);
-		}
-		printf("\n");
-		printf("\n");*/
-
-		res = hid_write(handle, buf, output_buffer_length);
-		int retries = 0;
-
-		/*for (int i = 0; i < 50; i++) {
-			res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-			for (int i = 0; i <= 100; i++) {
-				printf("%i: %02x ", i, buf[i]);
-			}
-			printf("\n");
-			printf("\n");*/
-		
-
-		//while (1) {
-		//	buf[0] != 21;
-		//}
-
-		//while (1) {}
-
-		while (1) {
-			res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-			//for (int i = 0; i <= 60; i++) {
-			//	printf("%i: %02x ", i, buf[i]);
-			//}
-			//printf("\n");
-			//printf("\n");
-			if (buf[0] == 0x21) {
-				if (buf[14] == 0x58) {
-					return;
-				}
-			}
-			retries++;
-			if (retries > 8 || res == 0) {
-				break;
-			}
-		}
-	}
-}
-
-
-void Joycon::set_vib_config(int a, int b, int c, int d) {
-	unsigned char buf[0x400];
-	memset(buf, 0, 0x40);
-
-	static int output_buffer_length = 49; //CTCAER - USE THIS - for some reason the pkt sub command was positioned right but all the subcommand 21 21 stuff was offset plus one byte
-	int res = 0;
-
-	memset(buf, 0, sizeof(buf));
-	auto hdr = (brcm_hdr*)buf;
-	hdr->cmd = 0x10;
-	hdr->rumble[0] = timing_byte & 0xF;
-	timing_byte++;
-	buf[6] = a;
-	buf[7] = b;
-	buf[8] = c;
-	buf[9] = d;
-
-	/*for (int i = 0; i <= 48; i++) {
-		printf("%i: %02x ", i, buf[i]);
-	}
-	printf("\n");
-	printf("\n");*/
-
-	res = hid_write(handle, buf, output_buffer_length);
-
-	res = hid_read_timeout(handle, buf, sizeof(buf), 64);
-	for (int i = 0; i <= 100; i++) {
-		printf("%i: %02x ", i, buf[i]);
-	}
-}
+#include "joycon/joycon.hpp"
 
 int Joycon::init_bt() {
 
@@ -626,7 +467,7 @@ tep20:
 	return 0;
 }
 
-void init_usb() {
+void Joycon::init_usb() {
 
 	this->bluetooth = false;
 
@@ -697,7 +538,7 @@ void init_usb() {
 	printf("Successfully initialized %s!\n", this->name.c_str());
 }
 
-void deinit_usb() {
+void Joycon::deinit_usb() {
 	unsigned char buf[0x40];
 	memset(buf, 0x00, 0x40);
 
@@ -708,105 +549,7 @@ void deinit_usb() {
 	printf("Deinitialized %s\n", this->name.c_str());
 }
 
-
-// calibrated sticks:
-// Credit to Hypersect (Ryan Juckett)
-// http://blog.hypersect.com/interpreting-analog-sticks/
-void CalcAnalogStick() {
-
-	if (this->left_right == 1) {
-		CalcAnalogStick2(
-			this->stick.CalX,
-			this->stick.CalY,
-			this->stick.x,
-			this->stick.y,
-			this->stick_cal_x_l,
-			this->stick_cal_y_l);
-
-	}
-	else if (this->left_right == 2) {
-		CalcAnalogStick2(
-			this->stick.CalX,
-			this->stick.CalY,
-			this->stick.x,
-			this->stick.y,
-			this->stick_cal_x_r,
-			this->stick_cal_y_r);
-
-	}
-	else if (this->left_right == 3) {
-		CalcAnalogStick2(
-			this->stick.CalX,
-			this->stick.CalY,
-			this->stick.x,
-			this->stick.y,
-			this->stick_cal_x_l,
-			this->stick_cal_y_l);
-
-		CalcAnalogStick2(
-			this->stick2.CalX,
-			this->stick2.CalY,
-			this->stick2.x,
-			this->stick2.y,
-			this->stick_cal_x_r,
-			this->stick_cal_y_r);
-	}
-}
-
-
-void CalcAnalogStick2
-(
-	float& pOutX,       // out: resulting stick X value
-	float& pOutY,       // out: resulting stick Y value
-	uint16_t x,              // in: initial stick X value
-	uint16_t y,              // in: initial stick Y value
-	uint16_t x_calc[3],      // calc -X, CenterX, +X
-	uint16_t y_calc[3]       // calc -Y, CenterY, +Y
-)
-{
-
-	float x_f, y_f;
-	// Apply Joy-Con center deadzone. 0xAE translates approx to 15%. Pro controller has a 10% () deadzone
-	float deadZoneCenter = 0.15f;
-	// Add a small ammount of outer deadzone to avoid edge cases or machine variety.
-	float deadZoneOuter = 0.10f;
-
-	// convert to float based on calibration and valid ranges per +/-axis
-	x = clamp(x, x_calc[0], x_calc[2]);
-	y = clamp(y, y_calc[0], y_calc[2]);
-	if (x >= x_calc[1]) {
-		x_f = (float)(x - x_calc[1]) / (float)(x_calc[2] - x_calc[1]);
-	}
-	else {
-		x_f = -((float)(x - x_calc[1]) / (float)(x_calc[0] - x_calc[1]));
-	}
-	if (y >= y_calc[1]) {
-		y_f = (float)(y - y_calc[1]) / (float)(y_calc[2] - y_calc[1]);
-	}
-	else {
-		y_f = -((float)(y - y_calc[1]) / (float)(y_calc[0] - y_calc[1]));
-	}
-
-	// Interpolate zone between deadzones
-	float mag = sqrtf(x_f * x_f + y_f * y_f);
-	if (mag > deadZoneCenter) {
-		// scale such that output magnitude is in the range [0.0f, 1.0f]
-		float legalRange = 1.0f - deadZoneOuter - deadZoneCenter;
-		float normalizedMag = min(1.0f, (mag - deadZoneCenter) / legalRange);
-		float scale = normalizedMag / mag;
-		pOutX = (x_f * scale);
-		pOutY = (y_f * scale);
-	}
-	else {
-		// stick is in the inner dead zone
-		pOutX = 0.0f;
-		pOutY = 0.0f;
-	}
-}
-
-// SPI (@CTCaer):
-
-int get_spi_data(uint32_t offset, const uint16_t read_len, uint8_t* test_buf) {
+int Joycon::get_spi_data(uint32_t offset, const uint16_t read_len, uint8_t* test_buf) {
 	int res;
 	uint8_t buf[0x100];
 	while (1) {
@@ -847,7 +590,7 @@ int get_spi_data(uint32_t offset, const uint16_t read_len, uint8_t* test_buf) {
 	return 0;
 }
 
-int write_spi_data(uint32_t offset, const uint16_t write_len, uint8_t* test_buf) {
+int Joycon::write_spi_data(uint32_t offset, const uint16_t write_len, uint8_t* test_buf) {
 	int res;
 	uint8_t buf[0x100];
 	int error_writing = 0;
@@ -884,7 +627,7 @@ int write_spi_data(uint32_t offset, const uint16_t write_len, uint8_t* test_buf)
 
 }
 
-void GetCalibrationData() {
+void Joycon::GetCalibrationData() {
 	printf("Getting calibration data...\n");
 	memset(factory_stick_cal, 0, 0x12);
 	memset(user_stick_cal, 0, 0x16);

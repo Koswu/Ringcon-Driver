@@ -21,6 +21,7 @@
         "xlocale": "cpp",
         "xlocinfo": "cpp",
         "xloctime": "cpp",
-        "xmemory": "cpp"
+        "xmemory": "cpp",
+        "string": "cpp"
     }
 }
