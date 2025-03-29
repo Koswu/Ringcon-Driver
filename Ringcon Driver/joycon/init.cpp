@@ -309,7 +309,73 @@ int start_external_polling() {
     return -1;
 }
 
-
+// 尝试初始化Ringcon
+// 返回值: true=初始化成功或不需要Ringcon; false=初始化失败
+bool Joycon::try_init_ringcon(int& retries, bool is_retry) {
+    // 只有重试时才重新获取校准数据
+    if (is_retry) {
+        GetCalibrationData();
+    }
+    
+    // 启用MCU数据
+    if (enable_mcu_data() != 0) {
+        printf("Failed to enable MCU data\n");
+        return false;
+    }
+    
+    // 设置MCU模式为Ringcon
+    if (set_mcu_mode_ringcon() != 0) {
+        printf("Failed to set MCU mode\n");
+        return false;
+    }
+    
+    // 设置外部设备模式
+    if (set_external_device_mode() != 0) {
+        printf("Failed to set external device mode\n");
+        return false;
+    }
+    
+    // 检测Ringcon是否连接
+    int ringcon_detected = detect_ringcon();
+    if (ringcon_detected == 0) {
+        printf("Enabling IMU data...\n");
+        unsigned char buf[0x40];
+        buf[0] = 0x01; // Enabled
+        send_subcommand(0x01, 0x40, buf, 1);
+        
+        printf("Successfully initialized but no Ringcon detected %s!\n", this->name.c_str());
+        return true;
+    }
+    
+    // 配置Ringcon IMU
+    int new_retries = configure_ringcon_imu(retries);
+    if (new_retries > 0) {
+        retries = new_retries;
+        // 如果需要重试并且尚未重试过
+        if (retries <= 1 && !is_retry) {
+            // 需要重试
+            return false;
+        }
+    }
+    
+    // 配置扩展设备格式
+    if (configure_ext_format() != 0) {
+        printf("Failed to configure extension format\n");
+        return false;
+    }
+    
+    // 启动外部轮询
+    if (start_external_polling() != 0) {
+        printf("Failed to start external polling\n");
+        return false;
+    }
+    
+    // 设置扩展配置
+    printf("Set Ext Config 58 - 4 4 12 2...\n");
+    set_ext_config(0x04, 0x04, 0x12, 0x02);
+    
+    return true;
+}
 
 // 主初始化函数
 int Joycon::init_bt() {
@@ -326,64 +392,14 @@ int Joycon::init_bt() {
     
     int Ringconretries = 0;
     
-ringcon_init_start:
-    // 启用MCU数据
-    if (enable_mcu_data() != 0) {
-        printf("Failed to enable MCU data\n");
-        goto finalize;
+    // 第一次尝试初始化
+    bool success = try_init_ringcon(Ringconretries, false);
+    
+    // 如果第一次失败且需要重试，进行第二次尝试
+    if (!success && Ringconretries <= 1) {
+        success = try_init_ringcon(Ringconretries, true);
     }
     
-    // 设置MCU模式为Ringcon
-    if (set_mcu_mode_ringcon() != 0) {
-        printf("Failed to set MCU mode\n");
-        goto finalize;
-    }
-    
-    // 设置外部设备模式
-    if (set_external_device_mode() != 0) {
-        printf("Failed to set external device mode\n");
-        goto finalize;
-    }
-    
-    // 检测Ringcon是否连接
-    int ringcon_detected = detect_ringcon();
-    if (ringcon_detected == 0) {
-        printf("Enabling IMU data...\n");
-        unsigned char buf[0x40];
-        buf[0] = 0x01; // Enabled
-        send_subcommand(0x01, 0x40, buf, 1);
-        
-        printf("Successfully initialized but no Ringcon detected %s!\n", this->name.c_str());
-        return 0;
-    }
-    
-    // 配置Ringcon IMU
-    int new_retries = configure_ringcon_imu(Ringconretries);
-    if (new_retries > 0) {
-        Ringconretries = new_retries;
-        if (Ringconretries <= 1) {
-            GetCalibrationData();
-            goto ringcon_init_start;
-        }
-    }
-    
-    // 配置扩展设备格式
-    if (configure_ext_format() != 0) {
-        printf("Failed to configure extension format\n");
-        goto finalize;
-    }
-    
-    // 启动外部轮询
-    if (start_external_polling() != 0) {
-        printf("Failed to start external polling\n");
-        goto finalize;
-    }
-    
-    // 设置扩展配置
-    printf("Set Ext Config 58 - 4 4 12 2...\n");
-    set_ext_config(0x04, 0x04, 0x12, 0x02);
-    
-finalize:
     printf("Successfully initialized %s!\n", this->name.c_str());
     return 0;
 }
