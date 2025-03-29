@@ -1,5 +1,143 @@
 #include "joycon/joycon.hpp"
 
+// 辅助函数：从两个字节中提取16位有符号整数
+int16_t extract_int16(uint8_t lsb, uint8_t msb) {
+    return uint16_to_int16(lsb | (msb << 8));
+}
+
+// 辅助函数：提取摇杆校准数据
+uint16_t extract_stick_cal_value(uint8_t lsb, uint8_t msb, bool high_nibble) {
+    if (high_nibble) {
+        return ((msb << 8) & 0xF00) | lsb;
+    } else {
+        return (msb << 4) | (lsb >> 4);
+    }
+}
+
+// 辅助函数：处理左侧摇杆校准数据
+void process_left_stick_calibration(uint8_t* cal_data, uint16_t* stick_x, uint16_t* stick_y) {
+    // 获取中心点校准值
+    stick_x[1] = extract_stick_cal_value(cal_data[3], cal_data[4], true);
+    stick_y[1] = extract_stick_cal_value(cal_data[4], cal_data[5], false);
+    
+    // 获取最小值校准值（减去偏移量）
+    stick_x[0] = stick_x[1] - extract_stick_cal_value(cal_data[6], cal_data[7], true);
+    stick_y[0] = stick_y[1] - extract_stick_cal_value(cal_data[7], cal_data[8], false);
+    
+    // 获取最大值校准值（加上偏移量）
+    stick_x[2] = stick_x[1] + extract_stick_cal_value(cal_data[0], cal_data[1], true);
+    stick_y[2] = stick_y[1] + extract_stick_cal_value(cal_data[2], cal_data[2], false);
+}
+
+// 辅助函数：处理右侧摇杆校准数据
+void process_right_stick_calibration(uint8_t* cal_data, uint16_t* stick_x, uint16_t* stick_y) {
+    // 获取中心点校准值
+    stick_x[1] = extract_stick_cal_value(cal_data[9], cal_data[10], true);
+    stick_y[1] = extract_stick_cal_value(cal_data[10], cal_data[11], false);
+    
+    // 获取最小值校准值（减去偏移量）
+    stick_x[0] = stick_x[1] - extract_stick_cal_value(cal_data[12], cal_data[13], true);
+    stick_y[0] = stick_y[1] - extract_stick_cal_value(cal_data[13], cal_data[14], false);
+    
+    // 获取最大值校准值（加上偏移量）
+    stick_x[2] = stick_x[1] + extract_stick_cal_value(cal_data[15], cal_data[16], true);
+    stick_y[2] = stick_y[1] + extract_stick_cal_value(cal_data[16], cal_data[17], false);
+}
+
+// 辅助函数：处理传感器校准数据
+void process_sensor_calibration(uint8_t* factory_data, uint8_t* user_data, int16_t sensor_cal[2][3], float* acc_coeff, float* gyro_coeff) {
+    // 加速度计工厂校准原点位置
+    sensor_cal[0][0] = extract_int16(factory_data[0], factory_data[1]);
+    sensor_cal[0][1] = extract_int16(factory_data[2], factory_data[3]);
+    sensor_cal[0][2] = extract_int16(factory_data[4], factory_data[5]);
+
+    // 陀螺仪工厂校准原点位置
+    sensor_cal[1][0] = extract_int16(factory_data[0xC], factory_data[0xD]);
+    sensor_cal[1][1] = extract_int16(factory_data[0xE], factory_data[0xF]);
+    sensor_cal[1][2] = extract_int16(factory_data[0x10], factory_data[0x11]);
+
+    // 检查是否存在用户校准数据
+    if ((user_data[0x0] | user_data[0x1] << 8) == 0xA1B2) {
+        // 加速度计用户校准原点位置
+        sensor_cal[0][0] = extract_int16(user_data[2], user_data[3]);
+        sensor_cal[0][1] = extract_int16(user_data[4], user_data[5]);
+        sensor_cal[0][2] = extract_int16(user_data[6], user_data[7]);
+
+        // 陀螺仪用户校准原点位置
+        sensor_cal[1][0] = extract_int16(user_data[0xE], user_data[0xF]);
+        sensor_cal[1][1] = extract_int16(user_data[0x10], user_data[0x11]);
+        sensor_cal[1][2] = extract_int16(user_data[0x12], user_data[0x13]);
+    }
+
+    // 计算加速度计校准系数并转换为SI单位
+    const float ACC_CONVERSION_FACTOR = 4.0f * 9.8f;
+    for (int i = 0; i < 3; i++) {
+        acc_coeff[i] = (1.0f / (16384.0f - sensor_cal[0][i])) * ACC_CONVERSION_FACTOR;
+    }
+
+    // 计算陀螺仪校准系数并转换为SI单位
+    const float GYRO_CONVERSION_FACTOR = 0.01745329251994f; // 度到弧度的转换系数
+    for (int i = 0; i < 3; i++) {
+        gyro_coeff[i] = (936.0f / (13371.0f - sensor_cal[1][i])) * GYRO_CONVERSION_FACTOR;
+    }
+}
+
+// 获取校准数据的主函数
+void GetCalibrationData() {
+    printf("Getting calibration data...\n");
+    
+    // 初始化所有校准数据缓冲区
+    memset(factory_stick_cal, 0, 0x12);
+    memset(user_stick_cal, 0, 0x16);
+    memset(sensor_model, 0, 0x6);
+    memset(stick_model, 0, 0x12);
+    memset(factory_sensor_cal, 0, 0x18);
+    memset(user_sensor_cal, 0, 0x1A);
+    memset(factory_sensor_cal_calm, 0, 0xC);
+    memset(user_sensor_cal_calm, 0, 0xC);
+    memset(sensor_cal, 0, sizeof(sensor_cal));
+    memset(stick_cal_x_l, 0, sizeof(stick_cal_x_l));
+    memset(stick_cal_y_l, 0, sizeof(stick_cal_y_l));
+    memset(stick_cal_x_r, 0, sizeof(stick_cal_x_r));
+    memset(stick_cal_y_r, 0, sizeof(stick_cal_y_r));
+
+    // 从SPI读取校准数据
+    get_spi_data(0x6020, 0x18, factory_sensor_cal);
+    get_spi_data(0x603D, 0x12, factory_stick_cal);
+    get_spi_data(0x6080, 0x6, sensor_model);
+    get_spi_data(0x6086, 0x12, stick_model);
+    get_spi_data(0x6098, 0x12, &stick_model[0x12]);
+    get_spi_data(0x8010, 0x16, user_stick_cal);
+    get_spi_data(0x8026, 0x1A, user_sensor_cal);
+
+    // 处理摇杆校准数据
+    if (this->left_right == 1 || this->left_right == 3) {
+        process_left_stick_calibration(factory_stick_cal, stick_cal_x_l, stick_cal_y_l);
+    }
+
+    if (this->left_right == 2 || this->left_right == 3) {
+        process_right_stick_calibration(factory_stick_cal, stick_cal_x_r, stick_cal_y_r);
+    }
+
+    // 处理用户摇杆校准数据（如果存在）
+    if ((user_stick_cal[0] | user_stick_cal[1] << 8) == 0xA1B2) {
+        process_left_stick_calibration(user_stick_cal, stick_cal_x_l, stick_cal_y_l);
+    }
+
+    if ((user_stick_cal[0xB] | user_stick_cal[0xC] << 8) == 0xA1B2) {
+        // 偏移量不同于工厂校准数据，因此单独处理
+        stick_cal_x_r[1] = extract_stick_cal_value(user_stick_cal[13], user_stick_cal[14], true);
+        stick_cal_y_r[1] = extract_stick_cal_value(user_stick_cal[14], user_stick_cal[15], false);
+        stick_cal_x_r[0] = stick_cal_x_r[1] - extract_stick_cal_value(user_stick_cal[16], user_stick_cal[17], true);
+        stick_cal_y_r[0] = stick_cal_y_r[1] - extract_stick_cal_value(user_stick_cal[17], user_stick_cal[18], false);
+        stick_cal_x_r[2] = stick_cal_x_r[1] + extract_stick_cal_value(user_stick_cal[19], user_stick_cal[20], true);
+        stick_cal_y_r[2] = stick_cal_y_r[1] + extract_stick_cal_value(user_stick_cal[20], user_stick_cal[21], false);
+    }
+
+    // 处理传感器校准数据
+    process_sensor_calibration(factory_sensor_cal, user_sensor_cal, sensor_cal, acc_cal_coeff, gyro_cal_coeff);
+}
+
 // 基本初始化设置
 int init_basic_settings() {
     unsigned char buf[0x40];
@@ -562,121 +700,4 @@ int Joycon::write_spi_data(uint32_t offset, const uint16_t write_len, uint8_t* t
 
 	return 0;
 
-}
-
-void GetCalibrationData() {
-	printf("Getting calibration data...\n");
-	memset(factory_stick_cal, 0, 0x12);
-	memset(user_stick_cal, 0, 0x16);
-	memset(sensor_model, 0, 0x6);
-	memset(stick_model, 0, 0x12);
-	memset(factory_sensor_cal, 0, 0x18);
-	memset(user_sensor_cal, 0, 0x1A);
-	memset(factory_sensor_cal_calm, 0, 0xC);
-	memset(user_sensor_cal_calm, 0, 0xC);
-	memset(sensor_cal, 0, sizeof(sensor_cal));
-	memset(stick_cal_x_l, 0, sizeof(stick_cal_x_l));
-	memset(stick_cal_y_l, 0, sizeof(stick_cal_y_l));
-	memset(stick_cal_x_r, 0, sizeof(stick_cal_x_r));
-	memset(stick_cal_y_r, 0, sizeof(stick_cal_y_r));
-
-
-	get_spi_data(0x6020, 0x18, factory_sensor_cal);
-	get_spi_data(0x603D, 0x12, factory_stick_cal);
-	get_spi_data(0x6080, 0x6, sensor_model);
-	get_spi_data(0x6086, 0x12, stick_model);
-	get_spi_data(0x6098, 0x12, &stick_model[0x12]);
-	get_spi_data(0x8010, 0x16, user_stick_cal);
-	get_spi_data(0x8026, 0x1A, user_sensor_cal);
-
-
-	// get stick calibration data:
-
-	// factory calibration:
-
-	if (this->left_right == 1 || this->left_right == 3) {
-		stick_cal_x_l[1] = (factory_stick_cal[4] << 8) & 0xF00 | factory_stick_cal[3];
-		stick_cal_y_l[1] = (factory_stick_cal[5] << 4) | (factory_stick_cal[4] >> 4);
-		stick_cal_x_l[0] = stick_cal_x_l[1] - ((factory_stick_cal[7] << 8) & 0xF00 | factory_stick_cal[6]);
-		stick_cal_y_l[0] = stick_cal_y_l[1] - ((factory_stick_cal[8] << 4) | (factory_stick_cal[7] >> 4));
-		stick_cal_x_l[2] = stick_cal_x_l[1] + ((factory_stick_cal[1] << 8) & 0xF00 | factory_stick_cal[0]);
-		stick_cal_y_l[2] = stick_cal_y_l[1] + ((factory_stick_cal[2] << 4) | (factory_stick_cal[2] >> 4));
-
-	}
-
-	if (this->left_right == 2 || this->left_right == 3) {
-		stick_cal_x_r[1] = (factory_stick_cal[10] << 8) & 0xF00 | factory_stick_cal[9];
-		stick_cal_y_r[1] = (factory_stick_cal[11] << 4) | (factory_stick_cal[10] >> 4);
-		stick_cal_x_r[0] = stick_cal_x_r[1] - ((factory_stick_cal[13] << 8) & 0xF00 | factory_stick_cal[12]);
-		stick_cal_y_r[0] = stick_cal_y_r[1] - ((factory_stick_cal[14] << 4) | (factory_stick_cal[13] >> 4));
-		stick_cal_x_r[2] = stick_cal_x_r[1] + ((factory_stick_cal[16] << 8) & 0xF00 | factory_stick_cal[15]);
-		stick_cal_y_r[2] = stick_cal_y_r[1] + ((factory_stick_cal[17] << 4) | (factory_stick_cal[16] >> 4));
-	}
-
-
-	// if there is user calibration data:
-	if ((user_stick_cal[0] | user_stick_cal[1] << 8) == 0xA1B2) {
-		stick_cal_x_l[1] = (user_stick_cal[6] << 8) & 0xF00 | user_stick_cal[5];
-		stick_cal_y_l[1] = (user_stick_cal[7] << 4) | (user_stick_cal[6] >> 4);
-		stick_cal_x_l[0] = stick_cal_x_l[1] - ((user_stick_cal[9] << 8) & 0xF00 | user_stick_cal[8]);
-		stick_cal_y_l[0] = stick_cal_y_l[1] - ((user_stick_cal[10] << 4) | (user_stick_cal[9] >> 4));
-		stick_cal_x_l[2] = stick_cal_x_l[1] + ((user_stick_cal[3] << 8) & 0xF00 | user_stick_cal[2]);
-		stick_cal_y_l[2] = stick_cal_y_l[1] + ((user_stick_cal[4] << 4) | (user_stick_cal[3] >> 4));
-	}
-	else {
-	}
-
-	if ((user_stick_cal[0xB] | user_stick_cal[0xC] << 8) == 0xA1B2) {
-		stick_cal_x_r[1] = (user_stick_cal[14] << 8) & 0xF00 | user_stick_cal[13];
-		stick_cal_y_r[1] = (user_stick_cal[15] << 4) | (user_stick_cal[14] >> 4);
-		stick_cal_x_r[0] = stick_cal_x_r[1] - ((user_stick_cal[17] << 8) & 0xF00 | user_stick_cal[16]);
-		stick_cal_y_r[0] = stick_cal_y_r[1] - ((user_stick_cal[18] << 4) | (user_stick_cal[17] >> 4));
-		stick_cal_x_r[2] = stick_cal_x_r[1] + ((user_stick_cal[20] << 8) & 0xF00 | user_stick_cal[19]);
-		stick_cal_y_r[2] = stick_cal_y_r[1] + ((user_stick_cal[21] << 4) | (user_stick_cal[20] >> 4));
-	}
-	else {
-		//FormJoy::myform1->textBox_rstick_ucal->Text = L"R Stick User:\r\nNo calibration";
-		//printf("no user Calibration data for right stick.\n");
-	}
-
-	// get gyro / accelerometer calibration data:
-
-	// factory calibration:
-
-	// Acc cal origin position
-	sensor_cal[0][0] = uint16_to_int16(factory_sensor_cal[0] | factory_sensor_cal[1] << 8);
-	sensor_cal[0][1] = uint16_to_int16(factory_sensor_cal[2] | factory_sensor_cal[3] << 8);
-	sensor_cal[0][2] = uint16_to_int16(factory_sensor_cal[4] | factory_sensor_cal[5] << 8);
-
-	// Gyro cal origin position
-	sensor_cal[1][0] = uint16_to_int16(factory_sensor_cal[0xC] | factory_sensor_cal[0xD] << 8);
-	sensor_cal[1][1] = uint16_to_int16(factory_sensor_cal[0xE] | factory_sensor_cal[0xF] << 8);
-	sensor_cal[1][2] = uint16_to_int16(factory_sensor_cal[0x10] | factory_sensor_cal[0x11] << 8);
-
-	// user calibration:
-	if ((user_sensor_cal[0x0] | user_sensor_cal[0x1] << 8) == 0xA1B2) {
-
-		// Acc cal origin position
-		sensor_cal[0][0] = uint16_to_int16(user_sensor_cal[2] | user_sensor_cal[3] << 8);
-		sensor_cal[0][1] = uint16_to_int16(user_sensor_cal[4] | user_sensor_cal[5] << 8);
-		sensor_cal[0][2] = uint16_to_int16(user_sensor_cal[6] | user_sensor_cal[7] << 8);
-
-		// Gyro cal origin position
-		sensor_cal[1][0] = uint16_to_int16(user_sensor_cal[0xE] | user_sensor_cal[0xF] << 8);
-		sensor_cal[1][1] = uint16_to_int16(user_sensor_cal[0x10] | user_sensor_cal[0x11] << 8);
-		sensor_cal[1][2] = uint16_to_int16(user_sensor_cal[0x12] | user_sensor_cal[0x13] << 8);
-	}
-	else {
-		//FormJoy::myform1->textBox_6axis_ucal->Text = L"\r\n\r\nUser:\r\nNo calibration";
-	}
-
-	// Use SPI calibration and convert them to SI acc unit
-	acc_cal_coeff[0] = (float)(1.0 / (float)(16384 - uint16_to_int16(sensor_cal[0][0]))) * 4.0f * 9.8f;
-	acc_cal_coeff[1] = (float)(1.0 / (float)(16384 - uint16_to_int16(sensor_cal[0][1]))) * 4.0f * 9.8f;
-	acc_cal_coeff[2] = (float)(1.0 / (float)(16384 - uint16_to_int16(sensor_cal[0][2]))) * 4.0f * 9.8f;
-
-	// Use SPI calibration and convert them to SI gyro unit
-	gyro_cal_coeff[0] = (float)(936.0 / (float)(13371 - uint16_to_int16(sensor_cal[1][0])) * 0.01745329251994);
-	gyro_cal_coeff[1] = (float)(936.0 / (float)(13371 - uint16_to_int16(sensor_cal[1][1])) * 0.01745329251994);
-	gyro_cal_coeff[2] = (float)(936.0 / (float)(13371 - uint16_to_int16(sensor_cal[1][2])) * 0.01745329251994);
 }
